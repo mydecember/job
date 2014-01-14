@@ -1,0 +1,19 @@
+SLIBS=msg/libvalist.a
+all:   call-ac call call-load
+call:call.c deltans.c call-thread
+	gcc call.c deltans.c -o call -lrt -lpcap  -DHAVE_PF_RING -L./mytop -ltop  -g -L./shm -lshm -L./ac -lacsm
+call-ac:call-ac.c deltans.c load.c
+	gcc call-ac.c deltans.c load.c $(SLIBS) -o call-ac -lrt -lpcap   -D__MSG__DEBUG__ -L./mytop -ltop -g  -L./ac -lacsm -lpthread -Wall -L./shm -lshm 
+call-load:call-load.c deltans.c load.c
+	gcc call-load.c deltans.c load.c $(SLIBS) -o call-load -lrt -lpcap   -D__MSG__DEBUG__ -L./mytop -ltop -g  -L./ac -lacsm -lpthread -Wall -L./shm -lshm 
+
+call-thread:call-thread.c deltans.c load.c
+	gcc call-thread.c deltans.c load.c $(SLIBS) -o call-thread -lrt -lpcap   -D__MSG__DEBUG__ -L./mytop -ltop -g  -L./ac -lacsm -lpthread -Wall -L./shm -lshm 
+
+call-ac1:call-ac.c deltans.c load.c
+	gcc call-ac.c deltans.c load.c $(SLIBS) -o call-ac -lrt -lpcap  -DHAVE_PF_RING -D__MSG__DEBUG__ -L./ -ltop -lunixc -g -lshm -L./ac -lacsm -lpthread
+pfcount: pfcount.c
+	gcc pfcount.c deltans.c -o pfcount -lrt -lpthread  ../lib/libpfring.a -DHAVE_PF_RING -lpcap -L./mytop -ltop
+
+clean:
+	rm -rf *.o udps udpcc udpc call *.bak pfcount call-ac

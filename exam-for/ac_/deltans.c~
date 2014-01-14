@@ -1,0 +1,46 @@
+#include"stdio.h"
+#include"time.h"
+
+
+//#define __TEST__
+
+
+
+#define NS_TIME(time) struct timespec spec_##time={0,0},now_##time={0,0}
+#define NS_TIME_START(time) ({clock_gettime(CLOCK_REALTIME,&(spec_##time));})
+#define NS_TIME_END(time) ({clock_gettime(CLOCK_REALTIME,&now_##time);\
+	delta_time(&now_##time,&spec_##time);})
+
+#define get_time(time) spec_##time;
+
+long delta_time (struct timespec * now,
+                 struct timespec * before) {
+  time_t delta_seconds;
+  time_t delta_microseconds;
+
+  /*
+   * compute delta in second, 1/10's and 1/1000's second units
+   */
+  delta_seconds      = now -> tv_sec  - before -> tv_sec;
+  delta_microseconds = now -> tv_nsec - before -> tv_nsec;
+
+  if(delta_microseconds < 0) {
+    /* manually carry a one from the seconds field */
+    delta_microseconds += 1000000000;  /* 1e6 */
+    -- delta_seconds;
+  }
+ // return((delta_seconds * 1000000000) + delta_microseconds);
+printf("\n[%lds, %ldns]\n",delta_seconds,delta_microseconds);
+}
+#ifdef __TEST__
+int main()
+{
+	NS_TIME(time);
+	NS_TIME_START(time);
+	//sleep(2);
+	usleep(500);
+	NS_TIME_END(time);
+	//long t = delta_time(&timeend,&timen);
+	//printf("time:%ld\n",t);
+}
+#endif

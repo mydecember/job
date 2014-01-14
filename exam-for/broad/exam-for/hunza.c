@@ -1,0 +1,277 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/socket.h>
+#include <linux/if_ether.h>
+#include <sys/ioctl.h>
+#include <net/if.h>
+#include<netinet/udp.h>
+#include <netdb.h>
+	#include"fcntl.h"
+#include <net/ethernet.h>//ether_header mac头
+
+#include <linux/icmp.h>
+
+#include <netinet/ip.h>//ip头 
+#include <netinet/tcp.h>//ip头 
+
+typedef	u_int32_t tcp_seq;
+#define MY_LOG 1
+#ifdef MY_LOG
+int mylog=1;
+#define msg(format,arg...) fprintf(fp,format,##arg)
+#else
+int mylog=0;
+#define msg(format,arg...) printf(format,##arg)
+#endif
+struct Packet{
+	int data_len;
+	//mac
+	unsigned char ether_dhost[40];
+	unsigned char ether_shost[40];
+	short ether_type;
+	//ip
+	 int ip_ver;
+	int ip_headlen;
+	int ip_ds;
+	int  ip_len;
+	int ip_id;
+	int ip_flag;
+	int ip_DF;//不能分片
+	int ip_MF;//还有分片
+	int ip_off;
+	int ip_ttl;
+	int ip_protocol;
+	char ip_protocols[20];
+	int ip_check;	
+	char ip_ipsrc[20];
+	char ip_ipdst[20];
+	//tcp
+	int sport;
+	int dport;
+	unsigned int tcp_seq;
+	unsigned int tcp_ack;
+	int tcp_off;
+	//int tcp_flag;
+	int 
+		tcp_FIN,
+		tcp_SYN,
+		tcp_RST,
+		tcp_PSH,
+		tcp_ACK,
+		tcp_URG;		
+	
+	int tcp_win;
+	int tcp_check;
+	int tcp_urg;
+	///
+		///
+	int tcp_mss;
+	int tcp_scale;
+	unsigned int tcp_timestamp;
+	unsigned int tcp_timestampack;
+	unsigned int tcp_sack_permit;
+	unsigned int tcp_sack_buf[40];	
+	int tcp_sack;
+	
+	//udp
+	int udp_check;
+	unsigned int udp_len; 
+	
+};
+struct Packet packet;
+/*
+ * TCP header.
+ * Per RFC 793, September, 1981.
+ */
+struct fniff_tcp
+  {
+    u_int16_t th_sport;		/* source port */
+    u_int16_t th_dport;		/* destination port */
+    tcp_seq th_seq;		/* sequence number */
+    tcp_seq th_ack;		/* acknowledgement number */
+#  if __BYTE_ORDER == __LITTLE_ENDIAN
+    u_int8_t th_x2:4;		/* (unused) */
+    u_int8_t th_off:4;		/* data offset */
+#  endif
+#  if __BYTE_ORDER == __BIG_ENDIAN
+    u_int8_t th_off:4;		/* data offset */
+    u_int8_t th_x2:4;		/* (unused) */
+#  endif
+    u_int8_t th_flags;
+#  define TH_FIN	0x01
+#  define TH_SYN	0x02
+#  define TH_RST	0x04
+#  define TH_PUSH	0x08
+#  define TH_ACK	0x10
+#  define TH_URG	0x20
+    u_int16_t th_win;		/* window */
+    u_int16_t th_sum;		/* checksum */
+    u_int16_t th_urp;		/* urgent pointer */
+};
+
+/* 以太网帧头部 */
+/*
+struct sniff_ethernet {
+u_char ether_dhost[ETHER_ADDR_LEN]; // 目的主机的地址 
+u_char ether_shost[ETHER_ADDR_LEN]; // 源主机的地址 
+u_short ether_type; // IP ARP RARP etc
+};
+
+*/
+/**
+ * Set misc mode for interface
+ * \param if_name interface name we will set
+ * \param sockfd the socket id we will set
+ * */
+int set_promisc (char *if_name, int sockfd)
+{
+    struct ifreq ifr;
+
+    strcpy (ifr.ifr_name, if_name);
+    if (0 != ioctl (sockfd, SIOCGIFFLAGS, &ifr))
+    {
+        printf ("Get interface flag failed\n");
+        return -1;
+    }
+
+    /* add the misc mode */
+    ifr.ifr_flags |= IFF_PROMISC;
+
+    if (0 != ioctl (sockfd, SIOCSIFFLAGS, &ifr))
+    {
+        printf ("Set interface flag failed\n");
+        return -1;
+    }
+}
+void setProtoco(char **protocol_names)
+{
+	int NUM_IP_PROTOS=256;
+	int i;
+	for (i = 0; i < NUM_IP_PROTOS; i++)
+	    {
+	    	printf("%d\n",i);
+	        struct protoent *pt =(struct protoent *) getprotobynumber(i);
+	
+	        if (pt != NULL)
+	        {
+	            int j;
+	
+	            protocol_names[i] = strdup(pt->p_name);
+	            for (j = 0; j < strlen(protocol_names[i]); j++)
+	                protocol_names[i][j] = toupper(protocol_names[i][j]);
+	        }
+	        else
+	        {
+	        	printf("error\n");
+	          //  char protoname[10];
+	
+	           // sprintf(protoname, sizeof(protoname), "PROTO:%03d", i);
+	          protocol_names[i] = strdup("pro known\n");
+	        }
+	    }
+ }
+void ip_v_info(unsigned char p)
+{
+	switch(p)
+	{
+		case 1:
+				printf("ICMP");
+				break;
+		case 2:
+				printf("IGMP");
+				break;
+		case 6:
+				printf("TCP");
+				break;
+		case 8:
+				printf("EGP");
+				break;
+		case 9:
+				printf("IGP");
+				break;
+		case 17:
+				printf("UDP");
+				break;
+		case 41:
+				printf("IPv6");
+				break;
+		case 89:
+				printf("OSPF");
+				break;
+		default:
+					printf("not known\n");	
+					break;
+	}
+}
+void ip_pro(char *buf,int number)
+{
+ struct protoent *protocol;
+   
+       protocol = getprotobynumber(number);
+       if(protocol == (struct protoent * ) NULL)
+       	{
+       		printf("no pro\n");
+       	}
+       //sprintf("%2d: %s: %-10s\n", protocol->p_proto, protocol->p_name, protocol->p_aliases[0]);
+       sprintf(buf,"%s",protocol->p_aliases[0]);
+ }      
+int main (int argc, char *argv[])
+{
+    int sockfd;
+    int flag=0;
+    int ret = 0;
+    int fd;
+    FILE *fp;
+    FILE *fplog;
+    int i;
+    int n;
+    char *datap;
+    unsigned int datalen;
+    int tcpbig20;
+        			  
+    char buffer[65535] = {0};
+    char filename[256];
+    unsigned char *eth_head = NULL;
+    struct ether_header *mac=NULL;
+    struct ip* ip=NULL;
+    struct fniff_tcp * tcp;
+    struct icmphdr* icmp;
+    struct udphdr* udp;
+    
+    int size_mac=sizeof(struct ether_header);
+    int size_ip=sizeof(struct ip);
+    
+     char ipdotdecs[20];
+        char ipdotdecc[20];
+   // int size_tcp=sizeof(struct tcp);
+   
+    char namebuf[4086];
+    
+    
+printf("%d,%d,%d,%d\n",ETH_P_IP,htons(ETH_P_IP),ntohs(2048),BYTE_ORDER);
+  // if ((sockfd = socket (PF_PACKET, SOCK_RAW, htons (ETH_P_ALL))) < 0)
+   if ((sockfd = socket (PF_PACKET, SOCK_RAW, htons (ETH_P_IP))) < 0)
+   {
+       printf ("create socket failed\n");
+       return -1;
+   }
+
+   if (0 != set_promisc ("eth0", sockfd))
+   {
+       printf ("Failed to set interface promisc mode\n");
+   }
+ memset (buffer, 0x0, sizeof (buffer));
+   while (1)
+   {
+   	
+       
+        ret = recvfrom (sockfd, buffer, sizeof (buffer), 0, NULL, NULL);
+	printf("%c",buffer[46]);
+      
+
+      
+   }
+
+    return 0;
+}

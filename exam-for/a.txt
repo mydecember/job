@@ -1,0 +1,6 @@
+DEV: eth0
+MASK: (null)
+EIinit hb
+EIinit bc
+aaaaaaaa
+aaaaaaaa

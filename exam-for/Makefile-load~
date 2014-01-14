@@ -1,0 +1,13 @@
+SRC=load.c
+H=msg/va_list.h load.h
+obj=load.o
+SLIBS=msg/libvalist.a
+CC=gcc
+all: load_test
+load_test: $(SRC) $(H)
+	$(CC) $(SRC) -o $@ $(SLIBS)  -D__MSG__DEBUG__ -D__LOAD_TEST__ -L./ac -lacsm
+
+	
+clean:
+	rm -rf *.o load_test /msg/lib*
+

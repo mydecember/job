@@ -1,0 +1,35 @@
+#include"shm.h"
+#include"stdio.h"
+typedef struct 
+{
+	char	Otherid[4+1];					/*本地的ID,16位，        文件、传真收发共用，            日志*/
+	char	CallFrom[4+1];				/*被叫时，对方电话号码， 文件、传真收发共用，            日志*/
+	/*char	CallTo[PHONE_LEN+1];				主叫时，拨打的电话号码*/
+	/*int	Calling;							主叫/被叫标示，1 主叫；0 被叫。*/	
+	/*发文件信息*/
+	int		EffectFileNum;						/*等待发送的文件个数，日志*/
+	int		CurFileNum;						/*当前正在发送的文件顺序号*/
+	char	SendFileName[4+1];			/*正在发送的文件名*/
+	int		FilesLen[256];				/*当前发送的文件大小*/
+	int		FSendedSize;						/*当前已发送字节数占当前文件大小百分比，文件、传真共用*/
+	int		TFileLen;							/*所选全部  文件大小*/
+	int		TFSendedSize;						/*已发送字节占所选文件全部大小的百分比*/
+	char	FileName[2][2+1];	/*要传送的数据文件所在目录路径，每次最多传10个传真文件， 日志*/
+	char	SendedFlag[2];				/*文件发送是否成功，1成功，0失败，日志*/
+
+	}UC_ShmMemory;
+	int main()
+	{
+		UC_ShmMemory *p;
+		int n;
+		int shmid;
+		shmid=CreateShm("/home",4,sizeof(UC_ShmMemory));
+		p=(UC_ShmMemory*)AttachShm(shmid);
+		printf("input:");
+		scanf("%d\n",&n);
+		p->CurFileNum=n;
+		printf("%d\n",p->CurFileNum);
+		DetachShm(p);
+		DeleteShm(shmid);
+		
+	}

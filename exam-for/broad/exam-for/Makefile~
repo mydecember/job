@@ -1,0 +1,8 @@
+all: call pfcount
+call:call.c deltans.c
+	gcc call.c deltans.c -o call -lrt -lpcap  -L./ -ltop
+pfcount: pfcount.c
+	gcc pfcount.c deltans.c -o pfcount -lrt -lpthread  ../lib/libpfring.a -DHAVE_PF_RING -lpcap -L./ -ltop
+
+clean:
+	rm -rf *.o udps udpcc udpc call *.bak pfcount
