@@ -105,19 +105,20 @@ void my_sigalarm(int sig) {
   	alarm(ALARM_SLEEP);
   	signal(SIGALRM, my_sigalarm);
 }
-
+pcap_t* descr;      /*you can man it*/
 void sigproc(int sig) {
 	int i;
+	pcap_breakloop(descr);
 
 
-	exitflag=1;
-	for(i=0;i<PRO_MAX+2;++i)
+	//exitflag=1;
+	/*for(i=0;i<PRO_MAX+2;++i)
 	{
 
 		printf("%s:%lld\n",pro_map[i],pronum[i]);
 	}
 	printf("\n");		
-  	//pcap_breakloop();
+  	//pcap_breakloop();*/
 }
 
 SSDD sd;
@@ -155,6 +156,11 @@ void threadpro(void* _id)
 	{
         fprintf(stderr, "set thread affinity failed\n");
     }
+    int exitflag=0;
+    while(!exitflag)
+    {
+
+    }
 
 	
 
@@ -171,33 +177,8 @@ void my_callback(u_char *useless,const struct pcap_pkthdr* pkthdr,const u_char*
 	//static int nn=0;
 	static int i;
 	static unsigned short eth_type;
-	static int vlan_flag=0;
-		
-	static int semnum;
-
-	if(exitflag)
-	{
-		
-		for(i=0;i<PRO_MAX+2;++i)
-		{
-
-			printf("%s:%lld\n",pro_map[i],pronum[i]);
-	  	}
-	   	printf("losepacket=%lld\n",losepacket);
-		//sem_post(&bin_sem);
-		NS_TIME_END(time);
-
-		speed1(NS_GET_TIMEP(time),packet_num,packet_len);
-
-		printf("count=%d,\nfind_pro=%lld\n",count,find_pro);
-
-		printf("exit\n");
-		//del_HB(&hb);		
-		del_HB(&classifiers[0].hb, &classifiers[0].sn);
-		//acsmFree (acsm);		
-		acsmFree (classifiers[0].acsm);
-		exit(0);
-	} 
+	static int vlan_flag=0;		
+	static int semnum;	
 
 	mac=(struct ether_header*)packet;
 	eth_type=ntohs(mac->ether_type);
@@ -282,36 +263,7 @@ void my_callback(u_char *useless,const struct pcap_pkthdr* pkthdr,const u_char*
 			classifiers[0].hb[hash].virtual_sn_num++;
 			
 			//msg("*****oooo*****=%ld\n",classifiers[0].hb[hash].virtual_sn_num);
-			
-			#if 0				
-				if(sd.b_port==21||sd.l_port==21)
-				{
-					//msg("ftp\n");
-					q->state=10;			
-					pronum[FTP]++;
-				}
-				else if(sd.b_port==80||sd.l_port==80)
-				{
-					//msg("http\n");
-					q->state=10;
-					pronum[HTTP]++;
-				}
-				else if(sd.b_port==25||sd.l_port==25)
-				{
-					//msg("smtp\n");
-					q->state=10;
-					pronum[SMTP]++;
-				}
-				else if(sd.b_port==110||sd.l_port==110)
-				{
-					//msg("pop\n");
-					q->state=10;
-					pronum[POP3]++;
-				}
-				memcpy(fortest,packet,pkthdr->caplen);
-			#endif
-
-      	}
+		}
       	else if(temp!=NULL)
       	{
       		// printf("state:%d\n",temp->state);
@@ -524,66 +476,7 @@ int set_promisc (char *if_name, int sockfd)
     }
 	return 0;
 }
-#define __GET__ETH__
-#ifdef __GET__ETH__
-#if 0
-int main(int argc, char **argv)
-{
-get_sys_info(f[0],10);
-usleep(600000);
 
- size_mac=sizeof(struct ether_header);
- size_ip=sizeof(struct ip);
-///////////////////////////////////
-
-signal(SIGINT, sigproc);
-  signal(SIGTERM, sigproc);
-  signal(SIGINT, sigproc);
-
-//perror("what's wrong\n");
-//init_loop(&shmp,&shmid,shmpath);
-//init_loop(&shmp,&shmid,shmpath1);
-int i;
-char buf[256];
-initBCBuff();
-printf("1111111111111111\n");
-for(i=0;i<snortnum;++i)//create shm
-{
-losep[i]=0LL;
-	sprintf(buf,"%s",shmpath);
-	//puts(buf);
-	init_loop(&shmp[i],&shmid[i],buf,i);
-}
-hb=init_HB(HB_MAX);
-	init_free_link(FREE_NODE);
-	init_BC();//the cache for the pro classificationd
-	printf("EIinit bc\n");
-	init_patterns();
-int sockfd;
-struct pcap_pkthdr pkthdr;
-   if ((sockfd = socket (PF_PACKET, SOCK_RAW, htons (ETH_P_ALL))) < 0)
-   {
-       printf ("create socket failed\n");
-       return -1;
-   }
-
-   if (0 != set_promisc ("eth0", sockfd))
-   {
-       printf ("Failed to set interface promisc mode\n");
-   }
-unsigned char buffer[65535] = {0};
-   while (1)
-   {
-   	
-   			//memset (&packet, 0x0, sizeof (packet));
-        memset (buffer, 0x0, sizeof (buffer));
-       pkthdr.caplen = recvfrom (sockfd, buffer, sizeof (buffer), 0, NULL, NULL);
-      my_callback(NULL,&pkthdr,buffer);
-		}
-
-  return 0;
-}
-#else
 int main(int argc, char **argv)
 {
 	char *dev; /* name of the device to use */ 
@@ -591,7 +484,7 @@ int main(int argc, char **argv)
 	char *mask;/* dot notation of the network mask    */
 	int ret;   /* return code */
 	//const u_char *packet;
-	pcap_t* descr;      /*you can man it*/
+	//pcap_t* descr;      /*you can man it*/
 	char errbuf[PCAP_ERRBUF_SIZE];
 	bpf_u_int32 netp; /* ip          */
 	bpf_u_int32 maskp;/* subnet mask */
@@ -654,6 +547,8 @@ int main(int argc, char **argv)
 
 	get_sys_info(f[0],10);
 	usleep(600000);
+	
+	
 
 	size_mac=sizeof(struct ether_header);
 	size_ip=sizeof(struct ip);
@@ -669,6 +564,7 @@ int main(int argc, char **argv)
 
 	
 	int ncalss;
+	pthread_t ids[CLASSIFY_NUM];
 	for(ncalss=0; ncalss<CLASSIFY_NUM; ++ncalss)
 	{
 
@@ -686,6 +582,13 @@ int main(int argc, char **argv)
 		pthread_mutex_init(&classifiers[ncalss].work_mutex,NULL);
 		classifiers[ncalss].head=NULL;
 		classifiers[ncalss].tail=NULL;
+		//create thread
+		int ret;
+		ret=pthread_create(&ids[ncalss],NULL,(void *) threadpro,(void*)ncalss);
+		if(ret!=0){ 
+			printf ("Create pthread error!\n"); 
+			exit (1); 
+		} 
 		//msg("EISpppppppppp");
 
 	}
@@ -709,300 +612,34 @@ int main(int argc, char **argv)
 
 	/////////////////////////////////////
 	//pthread_join(threadid,NULL);
-
-	printf("11111111111\n");
-	return 0;
-}
-#endif
-#else
-
-
-#if 1//get packet and write it to the file
-int main(int argc, char* argv[])
-{
-
-	char *dev; /* name of the device to use */ 
-	char *net; /* dot notation of the network address */
-	char *mask;/* dot notation of the network mask    */
-	int ret;   /* return code */
-	//const u_char *packet;
-	pcap_t* descr;      /*you can man it*/
-	char errbuf[PCAP_ERRBUF_SIZE];
-	bpf_u_int32 netp; /* ip          */
-	bpf_u_int32 maskp;/* subnet mask */
-	struct in_addr addr;
-	char *bpfFilter="tcp port 80";//NULL;//"tcp port 21";//NULL;
-	//	char *bpfFilter=NULL;
-	char *filename="/dev/shm/get.pcap";
-	struct bpf_program fcode;
-
-	/* ask pcap to find a valid device for use to sniff on */
-	dev = pcap_lookupdev(errbuf);
-
-	/* error checking */
-	if(dev == NULL)
-	{
-		printf("%s\n",errbuf);
-		exit(1);
-	}
-
-	/* print out device name */
-	printf("DEV: %s\n",dev);
-
-	/* ask pcap for the network address and mask of the device */
-	ret = pcap_lookupnet(dev,&netp,&maskp,errbuf);
-
-	if(ret == -1)
-	{
-		printf("%s\n",errbuf);
-		exit(1);
-	}
-
-	/* get the network address in a human readable form */
-	addr.s_addr = netp;
-	net = inet_ntoa(addr);
-
-	if(net == NULL)/* thanks Scott :-P */
-	{
-		perror("inet_ntoa");
-		exit(1);
-	}
-
-	printf("NET: %s\n",net);
-
-	/* do the same as above for the device's mask */
-	addr.s_addr = maskp;
-	mask = inet_ntoa(addr);
-
-	if(mask == NULL)
-	{
-		perror("inet_ntoa");
-		exit(1);
-	}
-
-	printf("MASK: %s\n",mask);
-
-	//descr = pcap_open_live(dev,65536,1 ,0,errbuf);
-	descr = pcap_open_live(dev,65535,1 ,0,errbuf);
-	// descr = pcap_open_live(NULL,BUFSIZ,1 ,0,errbuf);
-	if(descr == NULL)
-	{ printf("pcap_open_live(): %s\n",errbuf); exit(1); }
-
-	if(pcap_compile(descr, &fcode, bpfFilter, 1, netp) < 0) {
-		printf("pcap_compile error: '%s'\n", pcap_geterr(descr));
-	} 
-	if(pcap_setfilter(descr, &fcode) < 0) {
-		printf("pcap_setfilter error: '%s'\n", pcap_geterr(descr));}
-
-	/////////////////////////////
-	signal(SIGINT, sigproc);
-	signal(SIGTERM, sigproc);
-	signal(SIGINT, sigproc);
-
-
-	out_pcap = pcap_dump_open(descr, filename);
-	if (out_pcap == NULL) {
-		printf("ERROR pcap_dump_open \n");
-		exit(-1);
-	}
-	pcap_loop(descr,-1,analyze_packet_qqtkt_write1,NULL);
-
-
-
-	/////////////////////////////////////////////////////
-
-	return 0;
-}
-#else//read the cap file and call the callback function
-int main(int argc, char* argv[])
-{
-
-	 char *dev; /* name of the device to use */ 
-  char *net; /* dot notation of the network address */
-  char *mask;/* dot notation of the network mask    */
-  int ret;   /* return code */
- //const u_char *packet;
-  pcap_t* descr;      /*you can man it*/
-  char errbuf[PCAP_ERRBUF_SIZE];
-  bpf_u_int32 netp; /* ip          */
-  bpf_u_int32 maskp;/* subnet mask */
-  struct in_addr addr;
-
-  /* ask pcap to find a valid device for use to sniff on */
-  dev = pcap_lookupdev(errbuf);
-
-  /* error checking */
-  if(dev == NULL)
-  {
-   printf("%s\n",errbuf);
-   exit(1);
-  }
-
-  /* print out device name */
-  printf("DEV: %s\n",dev);
-
-  /* ask pcap for the network address and mask of the device */
-/*  ret = pcap_lookupnet(dev,&netp,&maskp,errbuf);
-
-  if(ret == -1)
-  {
-   printf("%s\n",errbuf);
-   exit(1);
-  }
-*/
-  /* get the network address in a human readable form */
-//  addr.s_addr = netp;
- // net = inet_ntoa(addr);
-
- /* if(net == NULL)// thanks Scott :-P 
-  {
-    perror("inet_ntoa");
-    exit(1);
-  }
-
-  printf("NET: %s\n",net);
-
-  // do the same as above for the device's mask 
-  addr.s_addr = maskp;
-  mask = inet_ntoa(addr);
-  
-  if(mask == NULL)
-  {
-    perror("inet_ntoa");
-    exit(1);
-  }*/
-  signal(SIGINT, sigproc);
-  signal(SIGTERM, sigproc);
-  signal(SIGINT, sigproc);
-  printf("MASK: %s\n",mask);
- size_mac=sizeof(struct ether_header);
- size_ip=sizeof(struct ip);
-	//char *filename="/dev/shm/get.pcap";
-	//char *filename="./get.pcap";
-//char *filename="/run/shm/http.pcap";
-initBCBuff();
-/* pthread_t my_thread;
-
-  if(pthread_create(&my_thread, NULL, threadclass, NULL)!=0)
-  	{
-  		msg("Ecreate thread error\n");
-  		exit(0);
-  	}
-*/
-     /// msg("kkkkkkkkkkkkk\n");
-int i;
-#if 1
-	#define MAX_FILE 1
-	//char filenameA[MAX_FILE+1][200]={{"/run/shm/http.pcap"},{"/run/shm/ftp.pcap"},{"/run/shm/pop3.pcap"},{"/run/shm/smtp.pcap"},{""}};
-char filenameA[MAX_FILE+1][200]={{"../get.pcap"},{""}};	
-//char filenameA[MAX_FILE+1][200]={{"/run/shm/http.pcap"},{""}};
-	//char *filename="./exam-for/ftp.pcap";
-	char *filename;
-	printf("EIinit hb\n");
-	hb=init_HB(HB_MAX);
-	init_free_link(FREE_NODE);
-	init_BC();//the cache for the pro classificationd
-	printf("EIinit bc\n");
-	init_patterns();
-msg("hhhhhh\n");
-DELAY_INI();
-
- 	 NS_TIME_START(time); 
-	int num=0;
-	int kk=0;
-
-	
-	
-again:
-	filename= filenameA[num];
-//	msg("kk=%d\n",kk);
-	num=(num+1)%MAX_FILE;
-
-	
-	//if(kk==100000)
-	if(kk==2)
-		goto endk;
-		++kk;
-	descr =pcap_open_offline(filename, errbuf);     
-	
-    if(descr == NULL)
-    { printf("pcap_open_live(): %s\n",errbuf); exit(1); }
-
-/////////////////////////////
-	//DELAY(DELAY_NS);	
-	
-	pcap_loop(descr,-1,my_callback,NULL);
-	//printf("llllllllllllll\n");
-	pcap_close(descr);
-goto again;
-endk:
-	exitflag=1;
-	//sem_post(&bin_sem);
-	 NS_TIME_END(time);
-	msg("\n===================%d\n\n",kk);
+	int i;
 	for(i=0;i<PRO_MAX+2;++i)
 	{
+
+		printf("%s:%lld\n",pro_map[i],pronum[i]);
+  	}
+   	printf("losepacket=%lld\n",losepacket);
+	//sem_post(&bin_sem);
+	NS_TIME_END(time);
+
+	speed1(NS_GET_TIMEP(time),packet_num,packet_len);
+
 	
-	printf("%s:%lld\n",pro_map[i],pronum[i]);
-  	 }
-	 printf("losepacket=%lld\n",losepacket);
-	
-		//speed(NS_GET_TIMEP(time),count+sum,firstlen);
-		speed1(NS_GET_TIMEP(time),packet_num,packet_len);
-	speed2(NS_GET_TIMEP(time),packet_num,packet_len,100000,DELAY_NS);
-	long long aaa=0;
-	for(kk=0;kk<65535;++kk)
-	{
-		aaa+=hb[kk].all;
-		if(hb[kk].all>=1000)
-		printf("%d,%d\n",kk,hb[kk].all);
+	for(ncalss=0; ncalss<CLASSIFY_NUM; ++ncalss)
+	{			
+		pthread_join(ids[ncalss],NULL);
+
 	}
-	printf("all:%d\n",aaa);
 	
-	
-#else
-	int fd=open(filename,O_RDONLY);
-	if(fd<=0)
-		perror("open error\n");
-
-	//unsigned char buf
-	struct pcap_pkthdr head;
-	u_char buf[3000];
-	int headlen=sizeof(struct pcap_file_header);
-	int phead=sizeof(struct pcap_pkthdr);
-	//while(read(fd,&head,sizeof()))
-	 NS_TIME_START(time); 
-	printf("EIinit hb\n");
-	hb=init_HB(HB_MAX);
-	init_free_link(FREE_NODE);
-	init_BC();//the cache for the pro classificationd
-	printf("EIinit bc\n");
-	init_patterns();
-	//msg("EISpppppppppp");
-
-	while(1)
+	for(ncalss=0; ncalss<CLASSIFY_NUM; ++ncalss)
 	{
-		lseek(fd,headlen,SEEK_SET);
-		//read(fd,buf,headlen);
-		while(read(fd,&head,phead))
-		{
-		//printf("lllll\n");
-			read(fd,buf,head.caplen);
-			my_callback(NULL,&head,buf);
-			//printf("%d\n",head.caplen);
-		}
-		
+		//del_HB(&hb);		
+		del_HB(&classifiers[ncalss].hb, &classifiers[ncalss].sn);
+		//acsmFree (acsm);		
+		acsmFree (classifiers[ncalss].acsm);
 	}
-#endif
-	
-
-
-//pthread_join(my_thread, NULL);
-	
-/////////////////////////////////////////////////////
-      
-        return 0;
+	msg("exit\n");
+	return 0;
 }
-#endif
-#endif
+
 
