@@ -432,7 +432,8 @@ int regist_probe(PRO pro_type,LN* ln)
 int feature_num[PRO_MAX]={0};
 void init_patterns(ACSM_STRUCT ** acsm)
 {
-	
+	static flag=0;
+	msg("flag=%d\n",flag);
 	*acsm=acsmNew();
 	int i=0,j=0;
 	for(i=0;(i<PRO_MAX)&&(strcmp((char*)pro_features[i][0],""));++i)
@@ -443,17 +444,25 @@ void init_patterns(ACSM_STRUCT ** acsm)
 		{
 			if(!strcmp((char*)pro_features[i][j],"|"))
 			{
+				if(!flag)
 				feature_num[i]--;
 					j++;
 				continue;
 			}
 			//printf("%s ",pro_features[i][j]);
 			acsmAddPattern(*acsm,pro_features[i][j],strlen((char*)pro_features[i][j]),1,i);
-			feature_num[i]++;
+			if(!flag)
+				feature_num[i]++;
 			j++;
 		}
 	}
 	acsmCompile(*acsm);
+	flag=1;
+	for(i=0;feature_num[i]!=0;++i)
+	{
+		msg("%d ",feature_num[i]);
+	}
+	msg("\n");
 }
 
 ///////////////////////////////

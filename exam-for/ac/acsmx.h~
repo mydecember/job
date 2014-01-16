@@ -30,7 +30,7 @@
 #include <string.h>
 #define  __HAVE__LOAD__
 #ifdef __HAVE__LOAD__
-#include"../load.h"
+#include"../load_head.h"
 #endif
 /*
 *   Prototypes
@@ -53,6 +53,7 @@ typedef struct _acsm_pattern {
 #ifdef __HAVE__LOAD__
 	int feature_id[PRO_MAX];
 	int pro_num;
+	unsigned char Tc[64*1024];
 #endif
 
 } ACSM_PATTERN;

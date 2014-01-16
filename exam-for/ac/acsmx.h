@@ -53,6 +53,7 @@ typedef struct _acsm_pattern {
 #ifdef __HAVE__LOAD__
 	int feature_id[PRO_MAX];
 	int pro_num;
+	
 #endif
 
 } ACSM_PATTERN;
@@ -82,7 +83,7 @@ typedef struct {
 
 	ACSM_PATTERN    * acsmPatterns;
 	ACSM_STATETABLE * acsmStateTable;
-
+	unsigned char Tc[64*1024];
 }ACSM_STRUCT;
 
 /*

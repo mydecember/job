@@ -80,7 +80,7 @@ typedef struct _loadNode{
 
 //////////////////////////////////////////
 #define hash_HB(ipsrc, ipdst)\
-((ipsrc)^((ipsrc)>>16)^(ipdst)^((ipdst)>>16)))
+((ipsrc)^((ipsrc)>>16)^(ipdst)^((ipdst)>>16))
 
 
 typedef u_int32_t tcp_seq;

@@ -67,7 +67,7 @@
 /*Define the number of the line,when match a keyword*/
 extern int nline=1;
 #ifdef __HAVE__LOAD__
-static find_num[PRO_MAX]={0};
+//static find_num[PRO_MAX]={0};
 #endif
 /*
 * Malloc the AC Memory
@@ -484,7 +484,7 @@ int acsmCompile (ACSM_STRUCT * acsm)
 
 
 /*64KB Memory*/
-static unsigned char Tc[64*1024];
+//static unsigned char Tc[64*1024];
 
 /*
 *   Search Text or Binary Data for Pattern matches
@@ -500,6 +500,7 @@ int acsmSearch (ACSM_STRUCT * acsm, unsigned char *Tx, int n,void (*PrintMatch) 
 		
 	int nfound = 0; /*Number of the found(matched) patten string*/
 	unsigned char *T;
+	unsigned char *Tc= acsm->Tc;
 	int index;
 	ACSM_PATTERN *temp;
 	
@@ -561,6 +562,7 @@ int acSearch (ACSM_STRUCT * acsm, BC *p)
 	int state;
 	ACSM_PATTERN * mlist;
 	unsigned char *Tend;
+	unsigned char *Tc=acsm->Tc;
 		
 	ACSM_STATETABLE * StateTable = acsm->acsmStateTable;
 		
@@ -695,7 +697,8 @@ void PrintSummary (ACSM_PATTERN * pattern)
 inline PRO getSummary (ACSM_PATTERN * pattern,int *array)
 {	
 	ACSM_PATTERN * mlist = pattern;
-	memset(find_num,0,PRO_MAX*sizeof(int));
+	//memset(find_num,0,PRO_MAX*sizeof(int));
+	int find_num[PRO_MAX]={0};
 	int i;
 	//printf("\n### Summary ###\n");
 	for (;mlist!=NULL;mlist=mlist->next)

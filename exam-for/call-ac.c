@@ -48,18 +48,26 @@ struct classify{
 		SN * sn;
 		BC * bc;
 		ACSM_STRUCT * acsm;
-		pthread_mutex_t work_mutex;
+		pthread_mutex_t work_mutex;// for the bc head an tail
 		//buf head and tail
 		BC* head;
 		BC* tail;
+		pthread_mutex_t BC_mutex;
+
 	};
 
-#define CLASSIFY_NUM 1
+pthread_mutex_t thread_mutex;
+//must the 2's pow
+#define CLASSIFY_NUM 4
 //bind thread at core
 int g_thread_at_core=0;
+unsigned short g_thread_mask=0;
 //core num
 int g_cpu_core=1;
-struct classify classifiers[CLASSIFY_NUM]; 	
+struct classify classifiers[CLASSIFY_NUM]; 	//number of the classify
+int efd[CLASSIFY_NUM];//number of the 
+
+
 int flag=0;
 int firstlen;
 NS_TIME(time);
@@ -88,11 +96,7 @@ long long find_pro=0LL;
 //////////////////////////
 ////////////////////////
 
- struct ether_header *mac=NULL;
-    struct ip* ip=NULL;
-    struct fniff_tcp * tcp;
-    struct icmphdr* icmp;
-    struct udphdr* udp;
+
 	
 
 
@@ -107,37 +111,23 @@ void my_sigalarm(int sig) {
 }
 pcap_t* descr;      /*you can man it*/
 void sigproc(int sig) {
-	int i;
+	exitflag=1;
+	//sleep(2);
 	pcap_breakloop(descr);
 
 
-	//exitflag=1;
-	/*for(i=0;i<PRO_MAX+2;++i)
-	{
-
-		printf("%s:%lld\n",pro_map[i],pronum[i]);
-	}
-	printf("\n");		
-  	//pcap_breakloop();*/
+	
+	msg("sigproc exit\n");
+	
 }
 
-SSDD sd;
-int tcplen;
-int fin;
-int ack;
-int syn;
-int rst;
-unsigned short hash;
-SN* temp;
 
-int datalen;
- 
-unsigned char* ptcp;
-static BC *p;
+//static BC *p;
 long long losepacket=0;
 
 char fortest[3000];
 #define DELAY_NS 4000
+
 
 
 void threadpro(void* _id)
@@ -145,40 +135,415 @@ void threadpro(void* _id)
 	long thread_id = (long)_id;
 	//unsigned int numCPU = sysconf( _SC_NPROCESSORS_ONLN);
 	//unsigned long core_id = thread_id % numCPU;
+	 uint64_t  count=0L;
+	  struct ether_header *mac=NULL;
+     struct ip* ip=NULL;
+     struct fniff_tcp * tcp;
+    //static struct icmphdr* icmp;
+     struct udphdr* udp;
+    BC* p;
+    int resumeBCNodeFlag=0;
+	
+	SSDD sd;
+	int tcplen;
+	int fin;
+	int ack;
+	int syn;
+	int rst;
+	unsigned short hash;
+	SN* temp;
 
+	int datalen;
+	 
 	/**
 	if computer have more cpu core, we bind thread to one core.
 	*/
 	cpu_set_t mask;
 	CPU_ZERO(&mask);
+	
+	pthread_mutex_lock(&thread_mutex);
 	CPU_SET((g_thread_at_core++%g_cpu_core), &mask);
+	
 	if (pthread_setaffinity_np(pthread_self(), sizeof(mask), &mask) < 0) 
 	{
         fprintf(stderr, "set thread affinity failed\n");
-    }
-    int exitflag=0;
-    while(!exitflag)
+    } 
+
+    msg("thread %d start, bind to %d \n", thread_id,(g_thread_at_core-1)%g_cpu_core);
+    pthread_mutex_unlock(&thread_mutex);
+    int ret = 0;       
+    int ep_fd = -1;
+    struct epoll_event events[10];
+    if (efd[thread_id] < 0)
     {
-
+        printf("efd not inited.\n");
+        goto fail;
+    }
+    ep_fd = epoll_create(1024);
+    if (ep_fd < 0)
+    {
+        perror("epoll_create fail: ");
+        goto fail;
     }
 
-	
+    struct epoll_event read_event;
 
-	
+    read_event.events = EPOLLHUP | EPOLLERR | EPOLLIN;//EPOLLET;
+    read_event.data.fd = efd[thread_id];
+
+    ret = epoll_ctl(ep_fd, EPOLL_CTL_ADD, efd[thread_id], &read_event);
+    if (ret < 0)
+    {
+        perror("epoll ctl failed:");
+        goto fail;
+    } 
+    int i = 0;     
+    int counti;
+    int proi;
+    while (!exitflag)
+    {
+       
+        ret = epoll_wait(ep_fd, &events[0], 10, 2000);  
+        //msg("epoll wait ret =%d\n",ret);      
+        if (ret > 0)
+        {
+          
+            for (i=0 ; i < ret; i++)
+            {
+               // printf("%d\n",i);
+                if (events[i].events & EPOLLHUP)
+                {
+                    msg("epoll eventfd has epoll hup.\n");
+                   // goto fail;
+                }
+                else if (events[i].events & EPOLLERR)
+                {
+                    msg("epoll eventfd has epoll error.\n");
+                    goto fail;
+                }
+                else if (events[i].events & EPOLLIN)
+                {
+                    int event_fd = events[i].data.fd;
+                    int res = read(event_fd, &count, sizeof(count));   
+                    //msg("thread event_fd =%d  thread_id =%d read count=%d\n",event_fd,thread_id,count);   
+                    if(count>1)
+                    	msg("count=%d\n",count);             
+                    if (res < 0)
+                    {
+                        perror("read fail:");
+                        goto fail;
+                    }
+                    else
+                    {                   	             	
+
+                    	for(counti=0; counti<count; ++counti)
+                    	{
+                    		resumeBCNodeFlag=1;
+                    		if (count-counti<2)
+                    			pthread_mutex_lock(&classifiers[thread_id].work_mutex);
+                    		
+                    		
+                    		p = classifiers[thread_id].head;
+                    		if (p == NULL)
+                    			{msg("head error count:%d counti:%d\n",count,counti);break;}
+                    		
+                    		if (classifiers[thread_id].tail == classifiers[thread_id].head)// if queue is the end
+                    		{
+                    			//if (classifiers[thread_id].head->next!=NULL)
+                    			//	msg("queue next error\n");
+                    			classifiers[thread_id].tail = NULL;
+                    			classifiers[thread_id].head = NULL;
+
+                    		}
+                    		else// not the end
+                    		{
+                    			classifiers[thread_id].head = classifiers[thread_id].head->next;
+                    			///if (classifiers[thread_id].head==NULL)
+                    			//	msg("queue error\n");
+                    		}                    		
+						
+							if(count-counti<2)
+								pthread_mutex_unlock(&classifiers[thread_id].work_mutex);
+							p->next=NULL;	
+							ip = p->ip;
+							//msg("EI msg\n");
+	                    	if((ip->ip_p==6))//tcp
+							{
+								//msg("EIStcp\n");
+								//tcp=(struct fniff_tcp*)(packet+size_mac+size_ip);
+								tcp=(struct fniff_tcp*)((char*)ip+size_ip);
+								sd.b_ip=(ip->ip_src.s_addr);
+								sd.l_ip=(ip->ip_dst.s_addr);
+								if(sd.b_ip>sd.l_ip)
+								{
+									sd.b_port=ntohs(tcp->th_sport);
+									sd.l_port=ntohs(tcp->th_dport);
+								}
+								else
+								{
+									sd.b_ip^=sd.l_ip;
+									sd.l_ip^=sd.b_ip;
+									sd.b_ip^=sd.l_ip;
+								
+									sd.b_port=ntohs(tcp->th_dport);
+									sd.l_port=ntohs(tcp->th_sport);					
+								}			
+								hash=hash_HB(sd.b_ip,sd.l_ip);
+								//msg("hash=%u\n",hash);
+								//hb[hash].virtual_sn_num++;
+								//return ;
+								classifiers[thread_id].hb[hash].all++;
+								tcplen=ntohs(ip->ip_len)-(ip->ip_hl*4)-(tcp->th_off*4);
+
+								//msg("EIStcp11111111111\n");
+								//printf("ntohs(ip->ip_len)=%d\n",ntohs(ip->ip_len)+14);
+								// packet.tcp_URG=tcp->th_flags&TH_URG;
+								ack=tcp->th_flags&TH_ACK;
+								// packet.tcp_PSH=tcp->th_flags&TH_PUSH;
+								rst=tcp->th_flags&TH_RST;
+								syn=tcp->th_flags&TH_SYN;
+								fin=tcp->th_flags&TH_FIN;
+								datalen=p->datalen;
+							   
+								//ptcp=(unsigned char*)tcp+(tcp->th_off*4);     	
+								
+								temp=find_node(classifiers[thread_id].hb[hash].virtual_sn,&sd);  
+								
+							  	//msg("ppppppppp\n");
+								if(temp==NULL&&syn&&!ack&&tcplen==0)
+						      	{
+						      		//msg("E no\n");
+						      		//msg("get node\n");
+						      		SN* q=get_node(&classifiers[thread_id].sn);
+						      		//msg("get node end\n");
+						      		q->sdipport=sd;
+						      		q->state=1;
+									insert_node(&(classifiers[thread_id].hb[hash].virtual_sn),q);
+									classifiers[thread_id].hb[hash].virtual_sn_num++;
+
+									
+									
+									//msg("*****oooo*****=%ld\n",classifiers[0].hb[hash].virtual_sn_num);
+								}
+						      	else if(temp!=NULL)
+						      	{
+						      		// printf("state:%d\n",temp->state);
+						      	
+						      		if((temp->state==1)&&syn&&ack&&(tcplen==0))
+						      		{
+						      			//msg("W:my ooooooooooooooooooo\n");
+						      			temp->state=2;
+						      		}
+						      		else if(temp->state==2&&ack&&!syn&&tcplen==0)
+						      		{
+						      			temp->state=3;
+						      			//msg("W:its ===============================static\n");
+						      				//msg("W:my hash:%u\n",hash);
+						      		}
+						      		else if(temp->state>=3&&temp->state<9)
+						      		{					      			
+						      			p->tcplen=tcplen;
+										//msg("tcplen=%d,pkthdr->caplen=%d\n",tcplen,pkthdr->caplen);
+										if(tcplen<0)
+										{
+											msg("EIS tcp<0\n");
+											exit(0);
+										}				
+						      			
+										//p->ptcp=(unsigned char*)(p->buf)+(tcp->th_off*4)+((unsigned char*)tcp-(unsigned char*)mac);//ptcp;
+						      			p->ptcp=(unsigned char*)(tcp)+(tcp->th_off*4);//ptcp;
+						      			temp->tcp_content_len+=tcplen;			
+						      			if(temp->bc_head==NULL)
+						      			{
+						      				temp->bc_head=temp->bc_tail=p;
+						      			}
+						      			else
+						      			{
+						      				temp->bc_tail->next=p;
+						      				temp->bc_tail=p;
+						      			}
+						      			resumeBCNodeFlag=0;
+						      			temp->state++;
+						      			if((temp->state==9)||rst||fin||(temp->tcp_content_len>150))
+						      			{
+						      				//msg("EIS static\n");
+											#if 0
+							      				p=temp->bc_head;
+							      				while(p!=NULL)
+							      				{				
+												if(p->tcplen!=0)
+												acsmSearch(acsm,p->ptcp,p->tcplen,PrintMatch);
+							      					p=p->next;
+							      				}
+											#else
+											//acSearch(acsm,temp->bc_head);
+												//msg("EI AC\n");
+							      				acSearch(classifiers[thread_id].acsm,temp->bc_head);
+												//msg("EI ac end\n");
+											#endif
+							      				proi=getSummary(classifiers[thread_id].acsm->acsmPatterns,feature_num); 
+											    		
+											//show the result of pro
+											msg("proi=%d=%s\n",proi,pro_map[proi]);
+							      				pronum[proi]++;
+											temp->proto=proi;
+						      				
+						      				temp->state=10;
+											pthread_mutex_lock(&classifiers[thread_id].BC_mutex);
+											resume_BC_node(&classifiers[thread_id].bc,temp->bc_head);
+											pthread_mutex_unlock(&classifiers[thread_id].BC_mutex);
+											temp->bc_head=NULL;
+											temp->bc_tail=NULL;
+											
+											//printf("1111111111\n");
+											if(rst||fin)
+						      				{
+												remove_HB_SN(&(classifiers[thread_id].hb[hash].virtual_sn),temp);
+						      					resume_node(&classifiers[thread_id].sn,temp);
+						      					classifiers[thread_id].hb[hash].virtual_sn_num--;
+						      					
+												//msg("*tt********=%ld\n",hb[hash].virtual_sn_num);
+												if(classifiers[thread_id].hb[hash].virtual_sn_num==0)
+													classifiers[thread_id].hb[hash].virtual_sn=NULL;
+						      					
+						      				}
+						      				
+											
+						      				
+						      				
+							      			
+						      			}
+						      			
+						      		}
+						      		else if(temp->state>=10)
+						      		{	
+										
+
+							      		if(rst||fin)
+										{
+											//msg("fin  rst %d\n",__LINE__);
+											//printf("2222222222222,%d,%d\n",hb[hash].virtual_sn_num,temp->state);
+											remove_HB_SN(&(classifiers[thread_id].hb[hash].virtual_sn),temp);
+											//msg("fin %d\n",__LINE__);
+											resume_node(&classifiers[thread_id].sn,temp);
+											//msg("resume end\n",__LINE__);
+											classifiers[thread_id].hb[hash].virtual_sn_num--;
+											//msg("**************=%ld\n",hb[hash].virtual_sn_num);
+											if(classifiers[thread_id].hb[hash].virtual_sn_num==0)
+												classifiers[thread_id].hb[hash].virtual_sn=NULL;
+											
+										}
+						      		} 
+									else
+									{
+										//msg("ggggggggggg\n");
+									}
+						      		
+						      	}     	
+								
+								    
+						    }//tcp
+						    else if(ip->ip_p==1)//icmp
+						    {
+						    	//msg("EISicmp\n");
+								//printf("2222\n");
+						     	//static char pro_map[PRO_MAX+2][20]={"HTTP","FTP","POP3","SMTP","UNKOWN","UDP","ICMP"};
+						 		pronum[PRO_MAX+1]++;
+						    }
+						    else if(ip->ip_p==17)//udp
+							{
+								//printf("1111111\n");
+								//msg("EISudp\n");
+								pronum[PRO_MAX]++;
+
+								udp=(struct udphdr *)(p->buf+size_mac+size_ip);
+								sd.b_ip=(ip->ip_src.s_addr);
+								sd.l_ip=(ip->ip_dst.s_addr);
+								if(sd.b_ip>sd.l_ip)
+								{
+									sd.b_port=ntohs(udp->source);
+									sd.l_port=ntohs(udp->dest);
+								}
+								else
+								{
+									sd.b_ip^=sd.l_ip;
+									sd.l_ip^=sd.b_ip;
+									sd.b_ip^=sd.l_ip;
+								
+									sd.b_port=ntohs(udp->dest);
+									sd.l_port=ntohs(udp->source);				
+								}			
+								hash=hash_HB(sd.b_ip,sd.l_ip);
+								//fprintf(stdout,"2B udp src port:%d\t",ntohs(udp->source));
+								//fprintf(stdout,"2B udp dst port:%d\n",ntohs(udp->dest));
+							}   
+							else
+							{
+								//msg("EISnot know\n");
+								//printf("no\n");
+							}
+							if (resumeBCNodeFlag)
+							{
+								pthread_mutex_lock(&classifiers[thread_id].BC_mutex);
+								resume_BC_node(&classifiers[thread_id].bc,p);
+								pthread_mutex_unlock(&classifiers[thread_id].BC_mutex);
+							}
+							
+						}//end count
+                       
+                    }
+                }
+            }
+        }
+        else if (ret == 0)
+        {
+        	if(exitflag)
+        	{
+        		msg("thread exit\n");
+        		goto fail;
+        	}
+            /* time out */
+           // msg("epoll wait timed out. thread_id=%d\n",thread_id);
+          
+        }
+        else
+        {
+        	if(exitflag)
+        	{
+        		msg("thread exit\n");
+        		goto fail;
+        	}
+            perror("epoll wait error:");
+            goto fail;
+        }
+    }     
+    fail:
+    if (ep_fd >= 0)
+    {
+        close(ep_fd);
+        ep_fd = -1;
+    }        
+	pthread_exit(NULL);	
 }
 
 void my_callback(u_char *useless,const struct pcap_pkthdr* pkthdr,const u_char*
         packet)
 {
-	packet_num++;
-	packet_len+=pkthdr->caplen;
-
-    static int count = 0;
+	//packet_num++;
+	//packet_len+=pkthdr->caplen;   
 	//static int nn=0;
-	static int i;
+	//static int i;
 	static unsigned short eth_type;
-	static int vlan_flag=0;		
-	static int semnum;	
+	static int vlan_flag=0;
+	static unsigned int sip,dip;	
+	static unsigned short classid;
+	static uint64_t count=1L;
+	static struct ether_header *mac=NULL;
+    static struct ip* ip=NULL;
+    static int ipoff;
+  /*  static struct fniff_tcp * tcp;
+    static struct icmphdr* icmp;
+    static struct udphdr* udp;*/
 
 	mac=(struct ether_header*)packet;
 	eth_type=ntohs(mac->ether_type);
@@ -193,242 +558,67 @@ void my_callback(u_char *useless,const struct pcap_pkthdr* pkthdr,const u_char*
 	 	vlan_flag=0;
 	
 	// msg("W:0X%04X\n",eth_type);
-	if((eth_type!=0x0800))//²»ÊÇipÊý¾Ý±¨
+	if((eth_type!=0x0800))
 	    return;
+	
 	if(vlan_flag)
-	 	ip=(struct ip*)(packet+size_mac+4);
+	{
+		ipoff=size_mac+4;
+		ip=(struct ip*)(packet+ipoff);
+	}	 	
  	else
-		ip=(struct ip*)(packet+size_mac);
+ 	{
+ 		ipoff=size_mac;
+ 		ip=(struct ip*)(packet+ipoff);
+ 	}
+			
+	sip=(ip->ip_src.s_addr);
+	dip=(ip->ip_dst.s_addr);
+	classid=hash_HB(sip,dip)&g_thread_mask;
+	//msg("classid=%d\n",classid);
 
+	pthread_mutex_lock(&classifiers[classid].BC_mutex);
+	
+	BC* p=get_BC_node(&classifiers[classid].bc);
+
+	
+	pthread_mutex_unlock(&classifiers[classid].BC_mutex);	
+
+
+
+	if(p==NULL)
+		{msg("EISget bc node error\n");exit(0);}
+	memcpy(p->buf,packet,pkthdr->caplen);
 		
+	p->datalen=pkthdr->caplen;	
+	p->ip = p->buf+ipoff;
+	
+	pthread_mutex_lock(&classifiers[classid].work_mutex);
+	if ( (classifiers[classid].tail == NULL) )
+	{
+		classifiers[classid].tail = classifiers[classid].head = p;		
+	}
+	else 
+	{
+		classifiers[classid].tail->next = p;
+		classifiers[classid].tail = p;
+	}	
+	pthread_mutex_unlock(&classifiers[classid].work_mutex);			
+	
+    if (write(efd[classid], &count, 8) < 0)
+    {
+        perror("write event fd fail:");
+       // return;
+    }
+ 
+    //msg("write\n");
+    //msg();
 	/*char ipdotdecs[20]={0};
     char ipdotdecc[20]={0};
 	inet_ntop(AF_INET,(void*)&(ip->ip_src),ipdotdecs,16);
 	inet_ntop(AF_INET,(void*)&(ip->ip_dst),ipdotdecc,16);
-	printf("%s-->%s: len:%d\n",ipdotdecs,ipdotdecc,pkthdr->caplen);
-	*/
-		
-	if((ip->ip_p==6))//tcp
-	{
-		//msg("EIStcp\n");
-		//tcp=(struct fniff_tcp*)(packet+size_mac+size_ip);
-		tcp=(struct fniff_tcp*)((char*)ip+size_ip);
-		sd.b_ip=(ip->ip_src.s_addr);
-		sd.l_ip=(ip->ip_dst.s_addr);
-		if(sd.b_ip>sd.l_ip)
-		{
-			sd.b_port=ntohs(tcp->th_sport);
-			sd.l_port=ntohs(tcp->th_dport);
-		}
-		else
-		{
-			sd.b_ip^=sd.l_ip;
-			sd.l_ip^=sd.b_ip;
-			sd.b_ip^=sd.l_ip;
-		
-			sd.b_port=ntohs(tcp->th_dport);
-			sd.l_port=ntohs(tcp->th_sport);					
-		}			
-		hash=hash_HB(sd.b_ip,sd.l_ip);
+	printf("%s-->%s: len:%d\n",ipdotdecs,ipdotdecc,pkthdr->caplen);*/
 
-		//hb[hash].virtual_sn_num++;
-		//return ;
-		classifiers[0].hb[hash].all++;
-		tcplen=ntohs(ip->ip_len)-(ip->ip_hl*4)-(tcp->th_off*4);
-
-		//msg("EIStcp11111111111\n");
-		//printf("ntohs(ip->ip_len)=%d\n",ntohs(ip->ip_len)+14);
-		// packet.tcp_URG=tcp->th_flags&TH_URG;
-		ack=tcp->th_flags&TH_ACK;
-		// packet.tcp_PSH=tcp->th_flags&TH_PUSH;
-		rst=tcp->th_flags&TH_RST;
-		syn=tcp->th_flags&TH_SYN;
-		fin=tcp->th_flags&TH_FIN;
-		datalen=pkthdr->caplen;
-	   
-		ptcp=(unsigned char*)tcp+(tcp->th_off*4);     	
-		//msg("find\n");
-		temp=find_node(classifiers[0].hb[hash].virtual_sn,&sd);  
-		//msg("find end\n");
-	  	//msg("ppppppppp\n");
-		if(temp==NULL&&syn&&!ack&&tcplen==0)
-      	{
-      		//msg("E no\n");
-      		//msg("get node\n");
-      		SN* q=get_node(&classifiers[0].sn);
-      		//msg("get node end\n");
-      		q->sdipport=sd;
-      		q->state=1;
-			insert_node(&(classifiers[0].hb[hash].virtual_sn),q);
-			classifiers[0].hb[hash].virtual_sn_num++;
-			
-			//msg("*****oooo*****=%ld\n",classifiers[0].hb[hash].virtual_sn_num);
-		}
-      	else if(temp!=NULL)
-      	{
-      		// printf("state:%d\n",temp->state);
-      	
-      		if((temp->state==1)&&syn&&ack&&(tcplen==0))
-      		{
-      			//msg("W:my ooooooooooooooooooo\n");
-      			temp->state=2;
-      		}
-      		else if(temp->state==2&&ack&&!syn&&tcplen==0)
-      		{
-      			temp->state=3;
-      			//msg("W:its ===============================static\n");
-      				//msg("W:my hash:%u\n",hash);
-      		}
-      		else if(temp->state>=3&&temp->state<9)
-      		{
-				//msg("nnnnnnnnnn,%d\n",temp->state);		      			
-				//if(tcplen==0)
-      			//	return;
-      			//msg("W:my hash:%u\n",hash);
-      			//msg("+++++\n");
-				//msg("ttttttttttttt\n");
-	      		p=get_BC_node(&classifiers[0].bc);
-				//msg("mmmmmmmmm\n");
-				if(p==NULL)
-					{msg("EISget bc node error\n");exit(0);}
-	      			
-      			p->datalen=pkthdr->caplen;
-      			p->tcplen=tcplen;
-				//msg("tcplen=%d,pkthdr->caplen=%d\n",tcplen,pkthdr->caplen);
-				if(tcplen<0)
-				{
-					msg("EIS tcp<0\n");
-					exit(0);
-				}				
-      			p->next=NULL;
-      			memcpy(p->buf,packet,pkthdr->caplen);
-				p->ptcp=(unsigned char*)(p->buf)+(tcp->th_off*4)+((unsigned char*)tcp-(unsigned char*)mac);//ptcp;
-      			temp->tcp_content_len+=tcplen;			
-      			if(temp->bc_head==NULL)
-      			{
-      				temp->bc_head=temp->bc_tail=p;
-      			}
-      			else
-      			{
-      				temp->bc_tail->next=p;
-      				temp->bc_tail=p;
-      			}
-      			temp->state++;
-      			if((temp->state==9)||rst||fin||(temp->tcp_content_len>150))
-      			{
-      				//msg("EIS static\n");
-					#if 0
-	      				p=temp->bc_head;
-	      				while(p!=NULL)
-	      				{				
-						if(p->tcplen!=0)
-						acsmSearch(acsm,p->ptcp,p->tcplen,PrintMatch);
-	      					p=p->next;
-	      				}
-					#else
-					//acSearch(acsm,temp->bc_head);
-					
-	      				acSearch(classifiers[0].acsm,temp->bc_head);
-					#endif
-	      				i=getSummary(classifiers[0].acsm->acsmPatterns,feature_num); 
-					    		
-					//show the result of pro
-					msg("i=%d=%s\n",i,pro_map[i]);
-	      				pronum[i]++;
-					temp->proto=i;
-      				if(rst||fin)
-      				{
-      					//msg("rst fin\n");
-						temp->state=10;
-						resume_BC_node(&classifiers[0].bc,temp->bc_head);
-						temp->bc_head=NULL;
-						temp->bc_tail=NULL;
-
-						//printf("1111111111\n");
-						remove_HB_SN(&(classifiers[0].hb[hash].virtual_sn),temp);
-      					resume_node(&classifiers[0].sn,temp);
-      					classifiers[0].hb[hash].virtual_sn_num--;
-      					
-						//msg("*tt********=%ld\n",hb[hash].virtual_sn_num);
-						if(classifiers[0].hb[hash].virtual_sn_num==0)
-							classifiers[0].hb[hash].virtual_sn=NULL;
-      					return;
-      				}
-      				temp->state=10;
-      				//msg("resume_node\n");
-      				resume_BC_node(&classifiers[0].bc,temp->bc_head);
-      				//msg("resume_node_end\n");
-	      			temp->bc_head=NULL;
-	      			temp->bc_tail=NULL;
-      			}
-      			
-      		}
-      		else if(temp->state>=10)
-      		{	
-				//msg("Ehhhhh:%d\n",pkthdr->caplen);
-				if(pkthdr->caplen<MAX_BUFFER_FOR_PACKET)
-					memcpy(fortest,packet,pkthdr->caplen);
-
-	      		if(rst||fin)
-				{
-					//msg("fin  rst %d\n",__LINE__);
-					//printf("2222222222222,%d,%d\n",hb[hash].virtual_sn_num,temp->state);
-					remove_HB_SN(&(classifiers[0].hb[hash].virtual_sn),temp);
-					//msg("fin %d\n",__LINE__);
-					resume_node(&classifiers[0].sn,temp);
-					//msg("resume end\n",__LINE__);
-					classifiers[0].hb[hash].virtual_sn_num--;
-					//msg("**************=%ld\n",hb[hash].virtual_sn_num);
-					if(classifiers[0].hb[hash].virtual_sn_num==0)
-						classifiers[0].hb[hash].virtual_sn=NULL;
-					return;
-				}
-      		} 
-			else
-			{
-				//msg("ggggggggggg\n");
-			}
-      		
-      	}     	
-		
-		    
-    }//tcp
-    else if(ip->ip_p==1)//icmp
-    {
-		//printf("2222\n");
-     	//static char pro_map[PRO_MAX+2][20]={"HTTP","FTP","POP3","SMTP","UNKOWN","UDP","ICMP"};
- 		pronum[PRO_MAX+1]++;
-    }
-    else if(ip->ip_p==17)//udp
-	{
-		//printf("1111111\n");
-		pronum[PRO_MAX]++;
-
-		udp=(struct udphdr *)(packet+size_mac+size_ip);
-		sd.b_ip=(ip->ip_src.s_addr);
-		sd.l_ip=(ip->ip_dst.s_addr);
-		if(sd.b_ip>sd.l_ip)
-		{
-			sd.b_port=ntohs(udp->source);
-			sd.l_port=ntohs(udp->dest);
-		}
-		else
-		{
-			sd.b_ip^=sd.l_ip;
-			sd.l_ip^=sd.b_ip;
-			sd.b_ip^=sd.l_ip;
-		
-			sd.b_port=ntohs(udp->dest);
-			sd.l_port=ntohs(udp->source);				
-		}			
-		hash=hash_HB(sd.b_ip,sd.l_ip);
-		//fprintf(stdout,"2B udp src port:%d\t",ntohs(udp->source));
-		//fprintf(stdout,"2B udp dst port:%d\n",ntohs(udp->dest));
-	}   
-	else
-	{
-		//printf("no\n");
-	}
 }
 
 void analyze_packet_qqtkt_write1(u_char *args, const struct pcap_pkthdr *header, const u_char *packet)
@@ -561,10 +751,36 @@ int main(int argc, char **argv)
 	//////////////
 	//compile ac dfa
 	///////////////
+	g_cpu_core = sysconf(_SC_NPROCESSORS_CONF);
+	cpu_set_t cpumask;
+	CPU_ZERO(&cpumask);
+	CPU_SET((g_thread_at_core++%g_cpu_core), &cpumask);
 
 	
+
+	msg("cpu cores: %d\n",g_cpu_core);
+
+	if (sched_setaffinity(0, sizeof(cpumask), &cpumask) == -1)
+	{
+		printf("warning: could not set CPU affinity, continuing...\n");
+	}
+
+	g_thread_mask = CLASSIFY_NUM-1;
 	int ncalss;
 	pthread_t ids[CLASSIFY_NUM];
+
+	for(ncalss=0; ncalss<CLASSIFY_NUM; ++ncalss)
+	{
+		efd[ncalss] = eventfd(0, EFD_NONBLOCK);
+		msg("efd=%d\n",efd[ncalss]);
+        if (efd[ncalss] < 0)
+        {
+            msg("EIeventfd failed.");
+            return;
+        }
+
+	}
+
 	for(ncalss=0; ncalss<CLASSIFY_NUM; ++ncalss)
 	{
 
@@ -580,8 +796,13 @@ int main(int argc, char **argv)
 		init_BC(&classifiers[ncalss].bc);//the cache for the pro classificationd
 		init_patterns(&classifiers[ncalss].acsm);
 		pthread_mutex_init(&classifiers[ncalss].work_mutex,NULL);
+		pthread_mutex_init(&classifiers[ncalss].BC_mutex,NULL);
 		classifiers[ncalss].head=NULL;
 		classifiers[ncalss].tail=NULL;
+	
+	}
+	for(ncalss=0; ncalss<CLASSIFY_NUM; ++ncalss)
+	{		
 		//create thread
 		int ret;
 		ret=pthread_create(&ids[ncalss],NULL,(void *) threadpro,(void*)ncalss);
@@ -592,24 +813,16 @@ int main(int argc, char **argv)
 		//msg("EISpppppppppp");
 
 	}
+	pthread_mutex_init(&thread_mutex,NULL);
+	
+	
 	
 
-	cpu_set_t cpumask;
-	CPU_ZERO(&cpumask);
-	CPU_SET((g_thread_at_core++%g_cpu_core), &cpumask);
-
-	g_cpu_core = sysconf(_SC_NPROCESSORS_CONF);
-
-
-
-	if (sched_setaffinity(0, sizeof(cpumask), &cpumask) == -1)
-	{
-		printf("warning: could not set CPU affinity, continuing...\n");
-	}
-
+	
+	msg("main start\n");
 	pcap_loop(descr,-1,my_callback,NULL);
 
-
+	msg("loop exit\n");
 	/////////////////////////////////////
 	//pthread_join(threadid,NULL);
 	int i;
@@ -637,6 +850,7 @@ int main(int argc, char **argv)
 		del_HB(&classifiers[ncalss].hb, &classifiers[ncalss].sn);
 		//acsmFree (acsm);		
 		acsmFree (classifiers[ncalss].acsm);
+		pthread_mutex_destroy(&classifiers[ncalss].work_mutex);
 	}
 	msg("exit\n");
 	return 0;
