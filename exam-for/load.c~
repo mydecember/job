@@ -451,7 +451,7 @@ void init_patterns(ACSM_STRUCT ** acsm)
 			}
 			//printf("%s ",pro_features[i][j]);
 			acsmAddPattern(*acsm,pro_features[i][j],strlen((char*)pro_features[i][j]),1,i);
-			if(Qflag)
+			if(!flag)
 				feature_num[i]++;
 			j++;
 		}
@@ -517,7 +517,7 @@ inline BC* get_BC_node(BC** BC_head)
 	if(p==NULL)
 		{
 			msg("WInode null\n");
-			exit(0);
+			//exit(0);
 			p=(BC*)calloc(1,sizeof(BC));
 			if(p==NULL)
 			{

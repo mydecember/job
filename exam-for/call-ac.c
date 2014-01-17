@@ -58,14 +58,15 @@ struct classify{
 
 pthread_mutex_t thread_mutex;
 //must the 2's pow
-#define CLASSIFY_NUM 4
+#define CLASSIFY_NUM 2
 //bind thread at core
 int g_thread_at_core=0;
 unsigned short g_thread_mask=0;
 //core num
 int g_cpu_core=1;
 struct classify classifiers[CLASSIFY_NUM]; 	//number of the classify
-int efd[CLASSIFY_NUM];//number of the 
+int efd[CLASSIFY_NUM]={0};//number of the 
+int maxnum[CLASSIFY_NUM]={0};
 
 
 int flag=0;
@@ -95,12 +96,6 @@ int nocase = 0;
 long long find_pro=0LL;
 //////////////////////////
 ////////////////////////
-
-
-	
-
-
-
 void my_sigalarm(int sig) {
  
 	get_sys_info(f[alarmnum],10);
@@ -154,7 +149,7 @@ void threadpro(void* _id)
 	SN* temp;
 
 	int datalen;
-	 
+
 	/**
 	if computer have more cpu core, we bind thread to one core.
 	*/
@@ -200,6 +195,7 @@ void threadpro(void* _id)
     int i = 0;     
     int counti;
     int proi;
+      
     while (!exitflag)
     {
        
@@ -223,11 +219,13 @@ void threadpro(void* _id)
                 }
                 else if (events[i].events & EPOLLIN)
                 {
-                    int event_fd = events[i].data.fd;
-                    int res = read(event_fd, &count, sizeof(count));   
+                   //int event_fd = events[i].data.fd;
+                    int res = read(events[i].data.fd, &count, sizeof(count));   
+                    
                     //msg("thread event_fd =%d  thread_id =%d read count=%d\n",event_fd,thread_id,count);   
-                    if(count>1)
-                    	msg("count=%d\n",count);             
+                    //if(count>1)
+                    	//msg("count=%d\n",count); 
+
                     if (res < 0)
                     {
                         perror("read fail:");
@@ -237,10 +235,15 @@ void threadpro(void* _id)
                     {                   	             	
 
                     	for(counti=0; counti<count; ++counti)
+                    	//for(counti=0; counti<count; )
                     	{
                     		resumeBCNodeFlag=1;
+                    		//if(count>maxnum[thread_id])
+                    		//	maxnum[thread_id]=count;
+                    		if(count>20)
+                    			maxnum[thread_id]=count;
                     		if (count-counti<2)
-                    			pthread_mutex_lock(&classifiers[thread_id].work_mutex);
+                    		pthread_mutex_lock(&classifiers[thread_id].work_mutex);
                     		
                     		
                     		p = classifiers[thread_id].head;
@@ -384,7 +387,7 @@ void threadpro(void* _id)
 							      				proi=getSummary(classifiers[thread_id].acsm->acsmPatterns,feature_num); 
 											    		
 											//show the result of pro
-											msg("proi=%d=%s\n",proi,pro_map[proi]);
+											//msg("proi=%d=%s\n",proi,pro_map[proi]);
 							      				pronum[proi]++;
 											temp->proto=proi;
 						      				
@@ -522,15 +525,16 @@ void threadpro(void* _id)
     {
         close(ep_fd);
         ep_fd = -1;
-    }        
+    }       
+    msg("thread end\n"); 
 	pthread_exit(NULL);	
 }
 
 void my_callback(u_char *useless,const struct pcap_pkthdr* pkthdr,const u_char*
         packet)
 {
-	//packet_num++;
-	//packet_len+=pkthdr->caplen;   
+	
+	  
 	//static int nn=0;
 	//static int i;
 	static unsigned short eth_type;
@@ -541,10 +545,12 @@ void my_callback(u_char *useless,const struct pcap_pkthdr* pkthdr,const u_char*
 	static struct ether_header *mac=NULL;
     static struct ip* ip=NULL;
     static int ipoff;
+    static char buf[6*1024];
   /*  static struct fniff_tcp * tcp;
     static struct icmphdr* icmp;
     static struct udphdr* udp;*/
-
+    	static int len=0;
+	static char * myp;	 
 	mac=(struct ether_header*)packet;
 	eth_type=ntohs(mac->ether_type);
 	
@@ -558,8 +564,8 @@ void my_callback(u_char *useless,const struct pcap_pkthdr* pkthdr,const u_char*
 	 	vlan_flag=0;
 	
 	// msg("W:0X%04X\n",eth_type);
-	if((eth_type!=0x0800))
-	    return;
+	///if((eth_type!=0x0800))
+	  //  return;
 	
 	if(vlan_flag)
 	{
@@ -571,11 +577,21 @@ void my_callback(u_char *useless,const struct pcap_pkthdr* pkthdr,const u_char*
  		ipoff=size_mac;
  		ip=(struct ip*)(packet+ipoff);
  	}
+ 
 			
 	sip=(ip->ip_src.s_addr);
 	dip=(ip->ip_dst.s_addr);
 	classid=hash_HB(sip,dip)&g_thread_mask;
+	//msg("%d\n",classid);
+	//usleep(1);
 	//msg("classid=%d\n",classid);
+	/*pthread_mutex_lock(&classifiers[classid].BC_mutex);	
+	//msg("%d\n",pkthdr->caplen);
+	if(pkthdr->caplen<2048)
+	memcpy(buf,packet,pkthdr->caplen);
+
+	pthread_mutex_unlock(&classifiers[classid].BC_mutex);	*/
+	
 
 	pthread_mutex_lock(&classifiers[classid].BC_mutex);
 	
@@ -587,8 +603,8 @@ void my_callback(u_char *useless,const struct pcap_pkthdr* pkthdr,const u_char*
 
 
 	if(p==NULL)
-		{msg("EISget bc node error\n");exit(0);}
-	memcpy(p->buf,packet,pkthdr->caplen);
+		{msg("EISget bc node error\n");return;}
+	memcpy(p->buf,packet,pkthdr->caplen<MAX_BUFFER_FOR_PACKET?pkthdr->caplen:MAX_BUFFER_FOR_PACKET);
 		
 	p->datalen=pkthdr->caplen;	
 	p->ip = p->buf+ipoff;
@@ -603,14 +619,17 @@ void my_callback(u_char *useless,const struct pcap_pkthdr* pkthdr,const u_char*
 		classifiers[classid].tail->next = p;
 		classifiers[classid].tail = p;
 	}	
-	pthread_mutex_unlock(&classifiers[classid].work_mutex);			
+	pthread_mutex_unlock(&classifiers[classid].work_mutex);	
 	
-    if (write(efd[classid], &count, 8) < 0)
+   if (write(efd[classid], &count, 8) < 0)
     {
-        perror("write event fd fail:");
+        perror("write event fd fail:\n");
+        msg("%d,%d\n",efd[classid],classid);
        // return;
     }
- 
+ 	packet_num++;
+ 	packet_len+=pkthdr->caplen; 
+ 	//sleep(1);
     //msg("write\n");
     //msg();
 	/*char ipdotdecs[20]={0};
@@ -727,9 +746,11 @@ int main(int argc, char **argv)
 
 	printf("MASK: %s\n",mask);
 
-	//descr = pcap_open_live(dev,65536,1 ,0,errbuf);
-	descr = pcap_open_live(dev,MAX_BUFFER_FOR_PACKET,1 ,0,errbuf);
-	// descr = pcap_open_live(NULL,BUFSIZ,1 ,0,errbuf);
+	//char *filename = "/run/shm/a.pcap";
+	char *filename = "/home/zhao1/get.pcap";
+	//descr = pcap_open_live(dev,MAX_BUFFER_FOR_PACKET,1 ,0,errbuf);
+	descr =pcap_open_offline(filename, errbuf);
+
 	if(descr == NULL)
 	{ printf("pcap_open_live(): %s\n",errbuf); exit(1); }
 
@@ -820,8 +841,12 @@ int main(int argc, char **argv)
 
 	
 	msg("main start\n");
+	sleep(2);
+	NS_TIME_START(time);
 	pcap_loop(descr,-1,my_callback,NULL);
-
+	exitflag=1;
+	NS_TIME_END(time);
+	speed1(NS_GET_TIMEP(time),packet_num,packet_len);
 	msg("loop exit\n");
 	/////////////////////////////////////
 	//pthread_join(threadid,NULL);
@@ -833,9 +858,9 @@ int main(int argc, char **argv)
   	}
    	printf("losepacket=%lld\n",losepacket);
 	//sem_post(&bin_sem);
-	NS_TIME_END(time);
+	
 
-	speed1(NS_GET_TIMEP(time),packet_num,packet_len);
+	
 
 	
 	for(ncalss=0; ncalss<CLASSIFY_NUM; ++ncalss)
@@ -851,8 +876,10 @@ int main(int argc, char **argv)
 		//acsmFree (acsm);		
 		acsmFree (classifiers[ncalss].acsm);
 		pthread_mutex_destroy(&classifiers[ncalss].work_mutex);
+		close(efd[ncalss]);
+		msg("%d ",maxnum[ncalss]);
 	}
-	msg("exit\n");
+	msg("\nexit\n");
 	return 0;
 }
 

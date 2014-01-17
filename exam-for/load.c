@@ -516,8 +516,8 @@ inline BC* get_BC_node(BC** BC_head)
 	
 	if(p==NULL)
 		{
-			msg("WInode null\n");
-			exit(0);
+			//msg("WInode null\n");
+			//exit(0);
 			p=(BC*)calloc(1,sizeof(BC));
 			if(p==NULL)
 			{
