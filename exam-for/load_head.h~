@@ -31,6 +31,7 @@ typedef struct _bufCache{
 	unsigned char *ptcp;
 	int datalen;
 	int tcplen;
+	struct ip* ip;
 	struct _bufCache *next;
 }BC;
 typedef struct _ssdd{

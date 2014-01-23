@@ -9,7 +9,7 @@
 #define MAX_FEATURE 20
 
 #define MAX_BUFFER_FOR_PACKET 3000
-#define BC_NUM	700
+#define BC_NUM	100000
 typedef enum {	
 	HTTP=0,
 	FTP,

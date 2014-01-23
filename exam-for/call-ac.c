@@ -10,7 +10,7 @@
 #include <pthread.h>
 #include <semaphore.h>
 #include <signal.h>
-#include"fcntl.h"
+#include "fcntl.h"
 #include <sys/socket.h>
 #include <linux/if_ether.h>
 #include <sys/ioctl.h>
@@ -20,16 +20,16 @@
 #include <netinet/ip.h>//ipÍ· 
 #include <netinet/tcp.h>//ipÍ· 
 #include <net/ethernet.h>//ether_header macÍ·
-#include"linux/if_ether.h"
+#include "linux/if_ether.h"
 #include <sys/un.h>
-#include"errno.h"
+#include "errno.h"
 
 #include <net/if.h>
-#include<netinet/udp.h>
+#include <netinet/udp.h>
 #include <netdb.h>
-#include"deltans.h"
-#include"load.h"
-#include"time.h"
+#include "deltans.h"
+#include "load.h"
+#include "time.h"
 #include <sys/eventfd.h>
 #include <sys/epoll.h>
 #include <sched.h>
@@ -37,6 +37,9 @@
 //#include"shm/shm.h"
 #include"ac/acsmx.h"
 #include"mytop/top.h"
+
+#define SERVPORT 3333 
+#define BACKLOG 10 
 
 #define ALARM_SLEEP 1
 extern  int get_sys_info(float *sysinfo,int n);
@@ -58,7 +61,7 @@ struct classify{
 
 pthread_mutex_t thread_mutex;
 //must the 2's pow
-#define CLASSIFY_NUM 2
+#define CLASSIFY_NUM 1
 //bind thread at core
 int g_thread_at_core=0;
 unsigned short g_thread_mask=0;
@@ -233,15 +236,15 @@ void threadpro(void* _id)
                     }
                     else
                     {                   	             	
-
+                    	if(count>4000)
+                    			maxnum[thread_id]++;
                     	for(counti=0; counti<count; ++counti)
                     	//for(counti=0; counti<count; )
                     	{
                     		resumeBCNodeFlag=1;
                     		//if(count>maxnum[thread_id])
                     		//	maxnum[thread_id]=count;
-                    		if(count>20)
-                    			maxnum[thread_id]=count;
+                    		
                     		if (count-counti<2)
                     		pthread_mutex_lock(&classifiers[thread_id].work_mutex);
                     		
@@ -331,7 +334,7 @@ void threadpro(void* _id)
 						      	else if(temp!=NULL)
 						      	{
 						      		// printf("state:%d\n",temp->state);
-						      	
+						      		
 						      		if((temp->state==1)&&syn&&ack&&(tcplen==0))
 						      		{
 						      			//msg("W:my ooooooooooooooooooo\n");
@@ -385,7 +388,7 @@ void threadpro(void* _id)
 												//msg("EI ac end\n");
 											#endif
 							      				proi=getSummary(classifiers[thread_id].acsm->acsmPatterns,feature_num); 
-											    		
+											    	
 											//show the result of pro
 											//msg("proi=%d=%s\n",proi,pro_map[proi]);
 							      				pronum[proi]++;
@@ -419,6 +422,7 @@ void threadpro(void* _id)
 						      			
 						      		}
 						      		else if(temp->state>=10)
+
 						      		{	
 										
 
@@ -437,10 +441,11 @@ void threadpro(void* _id)
 											
 										}
 						      		} 
-									else
+						      		
+									/*else
 									{
 										//msg("ggggggggggg\n");
-									}
+									}*/
 						      		
 						      	}     	
 								
@@ -747,7 +752,8 @@ int main(int argc, char **argv)
 	printf("MASK: %s\n",mask);
 
 	//char *filename = "/run/shm/a.pcap";
-	char *filename = "/home/zhao1/get.pcap";
+	//char *filename = "/home/zhao1/get.pcap";
+	char *filename = "/run/shm/get.pcap";
 	//descr = pcap_open_live(dev,MAX_BUFFER_FOR_PACKET,1 ,0,errbuf);
 	descr =pcap_open_offline(filename, errbuf);
 
