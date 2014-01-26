@@ -37,15 +37,5 @@ extern int smtp_num;
 //extern char ***pro_features;//[][MAX_FEATURE][100];
 extern int feature_num[PRO_MAX];
 inline void remove_HB_SN(SN** sn, SN* node);
-{
-	if(node==NULL) return;
-	if(*sn==node)
-	{
-		*sn=(*sn)->next;
-	}	
-	else
-	{
-		node->pre->next=node->next;
-	}
-}
+
 #endif

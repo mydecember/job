@@ -42,6 +42,9 @@
 #define BACKLOG 10 
 
 #define ALARM_SLEEP 1
+
+#define SEND_TO_CLIENT 1
+
 extern  int get_sys_info(float *sysinfo,int n);
 
 static char pro_map[PRO_MAX+2][20]={"HTTP","FTP","POP3","SMTP","UNKOWN","UDP","ICMP"};
@@ -62,6 +65,18 @@ struct classify{
 pthread_mutex_t thread_mutex;
 //must the 2's pow
 #define CLASSIFY_NUM 1
+
+
+typedef struct _loadNode{
+	
+	int probe_id;
+	int load_value;
+	int clientfd;
+}LN;
+
+LN load_table[40];
+
+
 //bind thread at core
 int g_thread_at_core=0;
 unsigned short g_thread_mask=0;
@@ -71,6 +86,8 @@ struct classify classifiers[CLASSIFY_NUM]; 	//number of the classify
 int efd[CLASSIFY_NUM]={0};//number of the 
 int maxnum[CLASSIFY_NUM]={0};
 
+int g_getPacketStartFlag=0;
+long g_sendpacket = 0L;
 
 int flag=0;
 int firstlen;
@@ -109,6 +126,7 @@ void my_sigalarm(int sig) {
 }
 pcap_t* descr;      /*you can man it*/
 void sigproc(int sig) {
+	msg("ESIsig=%d\n",sig);
 	exitflag=1;
 	//sleep(2);
 	pcap_breakloop(descr);
@@ -127,7 +145,96 @@ char fortest[3000];
 #define DELAY_NS 4000
 
 
+int full_send(int sockfd, char * buf, int buflen, int flag)
+{
+	if (sockfd <= 0)
+		return -1;
+	if (MAX_BUFFER_FOR_PACKET < buflen)
+		buflen = MAX_BUFFER_FOR_PACKET;
+	int havesend = send(sockfd, buf, buflen, flag);
+	if (havesend == buflen) {
+			
+			return 0;
+		}
+	if (havesend < buflen) {
+		if (havesend == -1 && errno != EAGAIN){
+			msg("ESIhavesend=%d\n",havesend);
+			return -1;
+		}
+		if (havesend == 0) {
+			msg("ESI havesend=0\n");
+			return -1;
+		}
 
+		fd_set writefds;//
+		struct timeval tv;
+		int sendlen;
+		
+		while(1)
+		{
+			FD_ZERO(&writefds);
+			FD_SET(sockfd,&writefds);
+			
+			tv.tv_sec = 2;
+			tv.tv_usec = 0;
+			int ret=select(sockfd+1, NULL, &writefds, NULL, &tv);
+			if(exitflag)
+	    	{
+	    		msg("exit\n");
+	    		return -1;
+	    	}
+			if(ret<0){
+				if (errno != EAGAIN){
+					msg("WSIsomethine is wrong\n");
+					return -1;
+				}
+				msg("ESIret=%d\n",ret);
+				continue;
+			}
+			else if (ret==0) 
+			{
+				msg("WIStime out...\n");
+				continue;
+			}
+			else
+			{			
+				if (FD_ISSET(sockfd, &writefds))
+				{			
+					sendlen = send(sockfd, buf, buflen - havesend, flag);				
+					if (sendlen == -1 && errno != EAGAIN){
+						msg("ESIsendlen=-1\n");
+						return -1;
+					}
+					if (sendlen !=-1)
+					{
+						havesend += sendlen;
+						if (havesend == buflen){
+							
+							return 0;
+						}
+						if (sendlen == 0) {
+							msg("ESI sendlen=0\n");
+							return -1;
+						}
+							
+					}
+						
+				}
+				else
+				{
+					msg("ESI***********\n");
+				}
+				
+			}
+
+			
+		}
+
+
+	}
+
+
+}
 void threadpro(void* _id)
 {
 	long thread_id = (long)_id;
@@ -198,6 +305,7 @@ void threadpro(void* _id)
     int i = 0;     
     int counti;
     int proi;
+    int bcnum;
       
     while (!exitflag)
     {
@@ -392,11 +500,50 @@ void threadpro(void* _id)
 											//show the result of pro
 											//msg("proi=%d=%s\n",proi,pro_map[proi]);
 							      				pronum[proi]++;
-											temp->proto=proi;
+											temp->proto = proi;
+
+											//chose the lower probe
+											temp->id = 0;
 						      				
 						      				temp->state=10;
 											pthread_mutex_lock(&classifiers[thread_id].BC_mutex);
-											resume_BC_node(&classifiers[thread_id].bc,temp->bc_head);
+											
+											#ifdef SEND_TO_CLIENT
+												if (load_table[temp->id].clientfd != -1)
+												{
+													p = temp->bc_head;
+													while(p!=NULL)
+													{
+														if (g_getPacketStartFlag && (full_send(load_table[temp->id].clientfd,&p->datalen,sizeof(p->datalen),0) < 0))
+														{
+																
+																g_getPacketStartFlag=0;
+																msg("EIS  send error,load_table[temp->id].clientfd=%d\n",load_table[temp->id].clientfd);
+																close(load_table[temp->id].clientfd);
+																load_table[temp->id].clientfd=-1;
+																//goto fail;
+														}
+
+														if (g_getPacketStartFlag && (full_send(load_table[temp->id].clientfd,p->buf,p->datalen,0) < 0))
+														{
+															
+															g_getPacketStartFlag=0;
+															msg("EIS  send error\n");
+															close(load_table[temp->id].clientfd);
+																load_table[temp->id].clientfd=-1;
+															//goto fail;
+														}
+														else
+														{
+															g_sendpacket++;
+														}
+														p=p->next;													
+													}
+												}
+											#endif
+											resume_BC_node(&classifiers[thread_id].bc,temp->bc_head);		
+											
+
 											pthread_mutex_unlock(&classifiers[thread_id].BC_mutex);
 											temp->bc_head=NULL;
 											temp->bc_tail=NULL;
@@ -421,11 +568,30 @@ void threadpro(void* _id)
 						      			}
 						      			
 						      		}
-						      		else if(temp->state>=10)
-
+						      		else if(temp->state >= 10)
 						      		{	
-										
-
+										#ifdef SEND_TO_CLIENT
+										if (g_getPacketStartFlag && (full_send(load_table[temp->id].clientfd,&p->datalen,sizeof(p->datalen),0) < 0))
+											{
+											
+												g_getPacketStartFlag = 0;
+													msg("EIS  send error\n");
+													//goto fail;
+												}
+						      			if (g_getPacketStartFlag && (full_send(load_table[temp->id].clientfd,p->buf,p->datalen,0) < 0))
+											{
+												g_sendpacket++;
+												g_getPacketStartFlag=0;
+												msg("EIS  send error\n");
+												close(load_table[temp->id].clientfd);
+												load_table[temp->id].clientfd=-1;
+												//goto fail;
+											}
+											else
+														{
+															g_sendpacket++;
+														}
+										#endif
 							      		if(rst||fin)
 										{
 											//msg("fin  rst %d\n",__LINE__);
@@ -456,6 +622,30 @@ void threadpro(void* _id)
 						    	//msg("EISicmp\n");
 								//printf("2222\n");
 						     	//static char pro_map[PRO_MAX+2][20]={"HTTP","FTP","POP3","SMTP","UNKOWN","UDP","ICMP"};
+						     	#ifdef SEND_TO_CLIENT
+						     	if (g_getPacketStartFlag && (full_send(load_table[0].clientfd,&p->datalen,sizeof(p->datalen),0) < 0))
+									{
+										
+											msg("EIS  send error\n");g_getPacketStartFlag=0;
+											close(load_table[0].clientfd);
+											load_table[0].clientfd=-1;
+										//goto fail;
+									}					
+
+						     	if (g_getPacketStartFlag &&  (full_send(load_table[0].clientfd,p->buf,p->datalen,0) < 0))
+									{
+										
+										
+										msg("EIS  send error\n");g_getPacketStartFlag=0;
+										close(load_table[0].clientfd);
+											load_table[0].clientfd=-1;
+										//goto fail;
+									}
+									else
+														{
+															g_sendpacket++;
+														}
+								#endif
 						 		pronum[PRO_MAX+1]++;
 						    }
 						    else if(ip->ip_p==17)//udp
@@ -482,11 +672,59 @@ void threadpro(void* _id)
 									sd.l_port=ntohs(udp->source);				
 								}			
 								hash=hash_HB(sd.b_ip,sd.l_ip);
+								#ifdef SEND_TO_CLIENT
+								if (g_getPacketStartFlag &&  (full_send(load_table[0].clientfd,&p->datalen,sizeof(p->datalen),0) < 0))
+									{
+										
+										msg("EIS  send error\n");g_getPacketStartFlag=0;
+										close(load_table[0].clientfd);
+											load_table[0].clientfd=-1;
+										//goto fail;
+									}
+
+								if (g_getPacketStartFlag && (full_send(load_table[0].clientfd,p->buf,p->datalen,0) < 0))
+									{
+										g_sendpacket++;
+								
+										msg("EIS  send error\n");g_getPacketStartFlag=0;
+										close(load_table[0].clientfd);
+											load_table[0].clientfd=-1;
+										//goto fail;
+									}
+									else
+														{
+															g_sendpacket++;
+														}
+								#endif
 								//fprintf(stdout,"2B udp src port:%d\t",ntohs(udp->source));
 								//fprintf(stdout,"2B udp dst port:%d\n",ntohs(udp->dest));
 							}   
 							else
 							{
+								#ifdef SEND_TO_CLIENT
+								
+								if (g_getPacketStartFlag && (full_send(load_table[0].clientfd,&p->datalen,sizeof(p->datalen),0) < 0))
+									{
+									
+										msg("EIS  send error\n");g_getPacketStartFlag=0;
+										close(load_table[0].clientfd);
+											load_table[0].clientfd=-1;
+										//goto fail;
+									}
+
+								if (g_getPacketStartFlag && (full_send(load_table[0].clientfd,p->buf,p->datalen,0) < 0))
+									{
+										g_sendpacket++;
+										msg("EIS  send error\n");g_getPacketStartFlag=0;
+										close(load_table[0].clientfd);
+											load_table[0].clientfd=-1;
+										//goto fail;
+									}
+									else
+														{
+															g_sendpacket++;
+														}
+								#endif
 								//msg("EISnot know\n");
 								//printf("no\n");
 							}
@@ -531,6 +769,7 @@ void threadpro(void* _id)
         close(ep_fd);
         ep_fd = -1;
     }       
+    exitflag = 1 ;
     msg("thread end\n"); 
 	pthread_exit(NULL);	
 }
@@ -596,6 +835,8 @@ void my_callback(u_char *useless,const struct pcap_pkthdr* pkthdr,const u_char*
 	memcpy(buf,packet,pkthdr->caplen);
 
 	pthread_mutex_unlock(&classifiers[classid].BC_mutex);	*/
+	if (!g_getPacketStartFlag)
+		return ;
 	
 
 	pthread_mutex_lock(&classifiers[classid].BC_mutex);
@@ -611,7 +852,7 @@ void my_callback(u_char *useless,const struct pcap_pkthdr* pkthdr,const u_char*
 		{msg("EISget bc node error\n");return;}
 	memcpy(p->buf,packet,pkthdr->caplen<MAX_BUFFER_FOR_PACKET?pkthdr->caplen:MAX_BUFFER_FOR_PACKET);
 		
-	p->datalen=pkthdr->caplen;	
+	p->datalen=pkthdr->caplen<MAX_BUFFER_FOR_PACKET?pkthdr->caplen:MAX_BUFFER_FOR_PACKET;	
 	p->ip = p->buf+ipoff;
 	
 	pthread_mutex_lock(&classifiers[classid].work_mutex);
@@ -690,7 +931,35 @@ int set_promisc (char *if_name, int sockfd)
     }
 	return 0;
 }
+int set_nonblock(int fd)
+{
+	int flags = fcntl(fd, F_GETFL, 0);
+	if (fcntl(fd, F_SETFL, flags | O_NONBLOCK) == -1)
+		return -1;
+	return 0;
+}
+int set_reuse(int fd)
+{
+	int  on = 1;
+	int ret = setsockopt( fd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on) );
+	return ret;
+}
+void threadsocks(void* _id)
+{
+	int descr = (int)_id;
+	while(!g_getPacketStartFlag)
+	{
+		sleep(1);
+		if (exitflag)
+			pthread_exit(NULL);
+	}
+	NS_TIME_START(time);
+	pcap_loop(descr,-1,my_callback,NULL);
+	sleep(4);
+	exitflag=1;
+	NS_TIME_END(time);
 
+}
 int main(int argc, char **argv)
 {
 	char *dev; /* name of the device to use */ 
@@ -753,9 +1022,10 @@ int main(int argc, char **argv)
 
 	//char *filename = "/run/shm/a.pcap";
 	//char *filename = "/home/zhao1/get.pcap";
-	char *filename = "/run/shm/get.pcap";
-	//descr = pcap_open_live(dev,MAX_BUFFER_FOR_PACKET,1 ,0,errbuf);
-	descr =pcap_open_offline(filename, errbuf);
+	//char *filename = "/run/shm/get.pcap";
+	//char *filename = "./get.pcap";
+	descr = pcap_open_live(dev,MAX_BUFFER_FOR_PACKET,1 ,0,errbuf);
+	//descr =pcap_open_offline(filename, errbuf);
 
 	if(descr == NULL)
 	{ printf("pcap_open_live(): %s\n",errbuf); exit(1); }
@@ -773,7 +1043,10 @@ int main(int argc, char **argv)
 
 	signal(SIGINT, sigproc);
 	signal(SIGTERM, sigproc);
-	signal(SIGINT, sigproc);
+	signal(SIGHUP, sigproc);
+	signal(SIGQUIT, sigproc);
+	signal(SIGSTOP, sigproc);
+	signal(SIGURG, sigproc);
 
 	//////////////
 	//compile ac dfa
@@ -795,6 +1068,10 @@ int main(int argc, char **argv)
 	g_thread_mask = CLASSIFY_NUM-1;
 	int ncalss;
 	pthread_t ids[CLASSIFY_NUM];
+
+
+
+	
 
 	for(ncalss=0; ncalss<CLASSIFY_NUM; ++ncalss)
 	{
@@ -840,18 +1117,145 @@ int main(int argc, char **argv)
 		//msg("EISpppppppppp");
 
 	}
+
+	
 	pthread_mutex_init(&thread_mutex,NULL);
 	
 	
 	
 
+
+
 	
 	msg("main start\n");
 	sleep(2);
-	NS_TIME_START(time);
-	pcap_loop(descr,-1,my_callback,NULL);
-	exitflag=1;
-	NS_TIME_END(time);
+	#if 0
+		NS_TIME_START(time);
+		pcap_loop(descr,-1,my_callback,NULL);
+		exitflag=1;
+		NS_TIME_END(time);
+	#endif
+	//start pcap get
+	pthread_t sockid;
+	ret=pthread_create(&sockid,NULL,(void *) threadsocks,(void*)descr);
+	if(ret!=0){ 
+		printf ("Create pthread error!\n"); 
+		exit (1); 
+	} 
+
+	
+	int sockfd; 
+	struct sockaddr_in my_addr; 
+	struct sockaddr_in remote_addr; 
+	if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) <0)
+	{
+		msg("socket error\n"); 
+		exit(1);
+	}
+	set_reuse(sockfd);
+	memset((char *)&my_addr, 0, sizeof(my_addr));
+	my_addr.sin_family=AF_INET;
+	my_addr.sin_port=htons(SERVPORT);
+	my_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+	/*if(inet_pton(AF_INET,"192.168.119.158",&my_addr.sin_addr)<=0) //±ŸµØµØÖ·×ª»»ÎªÍøÂçµØÖ· 
+	{
+		printf("invalid dest ip");
+		exit(1);
+	}*/
+	
+	if (bind(sockfd, (struct sockaddr *)&my_addr, sizeof(struct sockaddr)) <0)
+	{
+		perror("bind");
+		exit(1);
+	}
+	if(listen(sockfd, BACKLOG)<0)
+	{
+		perror("listen");
+		exit(1);
+	}
+	int sin_size = sizeof(struct sockaddr_in);
+
+	fd_set readfds;//
+	struct timeval tv;
+	#define SOCKBUF 256
+	char sockbuf[SOCKBUF];
+	int recvnum;
+	int addrlen = sizeof(struct sockaddr_in);
+
+	//int clientfd[20];
+	int clientnum=0;
+	int clientindex;
+	while(1)
+	{
+		FD_ZERO(&readfds);
+		FD_SET(sockfd,&readfds);
+		for (clientindex = 0; clientindex < clientnum; ++clientindex) 
+		{
+			if (load_table[clientindex].clientfd != -1)
+				FD_SET(load_table[clientindex].clientfd, &readfds);
+		}
+		
+		tv.tv_sec = 3;
+		tv.tv_usec = 0;
+		msg("wait for connect\n");
+		ret=select(sockfd+1,&readfds,NULL,NULL,&tv);
+		if(ret<0){printf("selecr error\n"); break;}
+		else if (ret==0) 
+		{
+			if (exitflag)
+			{
+				break;
+			}
+			//printf("timeout\n");
+			continue;
+		}
+		else
+		{			
+			if (FD_ISSET(sockfd, &readfds))
+			{			
+
+				if ((load_table[clientnum].clientfd = accept(sockfd, (struct sockaddr *)&remote_addr, &sin_size)) == -1)
+				{
+					perror("accept error");
+					continue;
+				}
+				msg("accept=%d\n",load_table[clientnum].clientfd);
+				set_nonblock(load_table[clientnum].clientfd);
+				sleep(4);
+				
+				g_getPacketStartFlag=1;
+				//send(load_table[clientnum].clientfd, &clientnum, sizeof(clientnum), 0);
+				//clientnum++;
+
+				//recvnum = recv(client_fd,sockbuf,SOCKBUF,0);	
+
+			}
+			else
+			{
+				for (clientindex = 0; clientindex < clientnum; ++clientindex) 
+				{
+					if (FD_ISSET(load_table[clientindex].clientfd, &readfds))
+					{						
+						recvnum = recv(load_table[clientindex].clientfd, sockbuf, 4, 0);	
+						if (recvnum == 0 || recvnum < 4)
+						{
+							msg("recv :%d num\n", recvnum);
+							close(load_table[clientindex].clientfd);
+							load_table[clientindex].clientfd = -1;
+						}			
+					}
+					
+				}
+				
+			}
+		}
+
+		
+	}
+	//sleep(5);
+	close(sockfd);
+	msg("IS\ng_sendpacket=%ld\npacket_num=%ld\n",g_sendpacket,packet_num);
+	exitflag = 1;
 	speed1(NS_GET_TIMEP(time),packet_num,packet_len);
 	msg("loop exit\n");
 	/////////////////////////////////////
@@ -874,6 +1278,8 @@ int main(int argc, char **argv)
 		pthread_join(ids[ncalss],NULL);
 
 	}
+	pthread_join(sockid,NULL);
+	
 	
 	for(ncalss=0; ncalss<CLASSIFY_NUM; ++ncalss)
 	{

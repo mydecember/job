@@ -29,7 +29,7 @@ typedef enum {
 typedef struct _bufCache{
 	unsigned char buf[MAX_BUFFER_FOR_PACKET];
 	unsigned char *ptcp;
-	int datalen;
+	unsigned int datalen;
 	int tcplen;
 	struct ip* ip;
 	struct _bufCache *next;
@@ -70,12 +70,12 @@ typedef struct _hashBase{
 
 
 /////////////////////load table///////////////////////
-typedef struct _loadNode{
+/*typedef struct _loadNode{
 	unsigned char mac[7];
 	int probe_id;
 	int load_value;
 	void *dst_addr;
-}LN;
+}LN;*/
 ////////////////////////////
 
 

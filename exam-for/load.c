@@ -394,7 +394,7 @@ int ftp_num=0;
 int pop3_num=0;
 //LN *SMTP_P=NULL;
 int smtp_num=0; 
-int unkown_num=0;*/
+int unkown_num=0;
 int pro_probe_num[PRO_MAX]={0};
 
 LN load_table[PRO_MAX][PRO_PROBE_NUM];
@@ -426,7 +426,7 @@ int regist_probe(PRO pro_type,LN* ln)
 	if(i==PRO_PROBE_NUM)
 		return -1;
 	return 0;
-}
+}*/
  //ACSM_STRUCT *acsm;///////////////ac///////////////////
 
 int feature_num[PRO_MAX]={0};
