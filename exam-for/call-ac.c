@@ -126,8 +126,17 @@ void my_sigalarm(int sig) {
 }
 pcap_t* descr;      /*you can man it*/
 void sigproc(int sig) {
-	msg("ESIsig=%d\n",sig);
-	exitflag=1;
+	msg("ESI[[[[[[[[[[[[[[[[[[[[[[[[[sig=%d\n",sig);
+	if (SIGPIPE != sig)
+	{
+		msg ("ESI exitflag=1\n");
+		exitflag=1;
+
+	} else {
+		msg("ESI }}}}}}}}}}}}}}}}}}}the sig is sigpipe\n");
+		g_getPacketStartFlag = 0;
+		close(load_table[0].clientfd);
+	}
 	//sleep(2);
 	pcap_breakloop(descr);
 
@@ -147,6 +156,11 @@ char fortest[3000];
 
 int full_send(int sockfd, char * buf, int buflen, int flag)
 {
+	if (buflen > MAX_BUFFER_FOR_PACKET)
+		{
+			msg("ESI =%d\n",buflen);
+			return -1;
+		}
 	if (sockfd <= 0)
 		return -1;
 	if (MAX_BUFFER_FOR_PACKET < buflen)
@@ -193,7 +207,8 @@ int full_send(int sockfd, char * buf, int buflen, int flag)
 			}
 			else if (ret==0) 
 			{
-				msg("WIStime out...\n");
+				msg("WIStime out... buflen=%d\n",buflen);
+				sleep(1);
 				continue;
 			}
 			else
@@ -201,21 +216,29 @@ int full_send(int sockfd, char * buf, int buflen, int flag)
 				if (FD_ISSET(sockfd, &writefds))
 				{			
 					sendlen = send(sockfd, buf, buflen - havesend, flag);				
-					if (sendlen == -1 && errno != EAGAIN){
-						msg("ESIsendlen=-1\n");
+					if (sendlen == -1 ){
+						if (errno != EAGAIN && errno != EINTR)
+						{
+							msg("ESIsendlen=-1\n");
+							return -1;
+						}
+						msg("WSI sendlen \n");
+						continue;
+					}
+					else if (sendlen == 0)
+					{
+						msg("WSI sendlen =0\n");
 						return -1;
 					}
-					if (sendlen !=-1)
+
+					else //(sendlen !=-1)
 					{
 						havesend += sendlen;
 						if (havesend == buflen){
 							
 							return 0;
 						}
-						if (sendlen == 0) {
-							msg("ESI sendlen=0\n");
-							return -1;
-						}
+						
 							
 					}
 						
@@ -306,7 +329,7 @@ void threadpro(void* _id)
     int counti;
     int proi;
     int bcnum;
-      
+    unsigned int headlen;
     while (!exitflag)
     {
        
@@ -514,7 +537,8 @@ void threadpro(void* _id)
 													p = temp->bc_head;
 													while(p!=NULL)
 													{
-														if (g_getPacketStartFlag && (full_send(load_table[temp->id].clientfd,&p->datalen,sizeof(p->datalen),0) < 0))
+														headlen = 0x7E7E0000|p->datalen;
+														if (g_getPacketStartFlag && (full_send(load_table[temp->id].clientfd,&headlen,4,0) < 0))
 														{
 																
 																g_getPacketStartFlag=0;
@@ -522,7 +546,9 @@ void threadpro(void* _id)
 																close(load_table[temp->id].clientfd);
 																load_table[temp->id].clientfd=-1;
 																//goto fail;
-														}
+														} else {
+															
+														} 
 
 														if (g_getPacketStartFlag && (full_send(load_table[temp->id].clientfd,p->buf,p->datalen,0) < 0))
 														{
@@ -571,13 +597,16 @@ void threadpro(void* _id)
 						      		else if(temp->state >= 10)
 						      		{	
 										#ifdef SEND_TO_CLIENT
-										if (g_getPacketStartFlag && (full_send(load_table[temp->id].clientfd,&p->datalen,sizeof(p->datalen),0) < 0))
+										headlen = 0x7E7E0000|p->datalen;
+										if (g_getPacketStartFlag && (full_send(load_table[temp->id].clientfd,&headlen,4,0) < 0))
 											{
 											
 												g_getPacketStartFlag = 0;
 													msg("EIS  send error\n");
 													//goto fail;
-												}
+												} else {
+													
+														} 
 						      			if (g_getPacketStartFlag && (full_send(load_table[temp->id].clientfd,p->buf,p->datalen,0) < 0))
 											{
 												g_sendpacket++;
@@ -623,14 +652,18 @@ void threadpro(void* _id)
 								//printf("2222\n");
 						     	//static char pro_map[PRO_MAX+2][20]={"HTTP","FTP","POP3","SMTP","UNKOWN","UDP","ICMP"};
 						     	#ifdef SEND_TO_CLIENT
-						     	if (g_getPacketStartFlag && (full_send(load_table[0].clientfd,&p->datalen,sizeof(p->datalen),0) < 0))
+						     	headlen = 0x7E7E0000|p->datalen;
+						     	if (g_getPacketStartFlag && (full_send(load_table[0].clientfd,&headlen,4,0) < 0))
 									{
 										
 											msg("EIS  send error\n");g_getPacketStartFlag=0;
 											close(load_table[0].clientfd);
 											load_table[0].clientfd=-1;
 										//goto fail;
-									}					
+									} else {
+										if (g_getPacketStartFlag)
+															printf("send :%d\n",p->datalen);
+														} 					
 
 						     	if (g_getPacketStartFlag &&  (full_send(load_table[0].clientfd,p->buf,p->datalen,0) < 0))
 									{
@@ -673,14 +706,17 @@ void threadpro(void* _id)
 								}			
 								hash=hash_HB(sd.b_ip,sd.l_ip);
 								#ifdef SEND_TO_CLIENT
-								if (g_getPacketStartFlag &&  (full_send(load_table[0].clientfd,&p->datalen,sizeof(p->datalen),0) < 0))
+								headlen = 0x7E7E0000|p->datalen;
+								if (g_getPacketStartFlag &&  (full_send(load_table[0].clientfd,&headlen,4,0) < 0))
 									{
 										
 										msg("EIS  send error\n");g_getPacketStartFlag=0;
 										close(load_table[0].clientfd);
 											load_table[0].clientfd=-1;
 										//goto fail;
-									}
+									} else {
+										
+														} 
 
 								if (g_getPacketStartFlag && (full_send(load_table[0].clientfd,p->buf,p->datalen,0) < 0))
 									{
@@ -702,15 +738,17 @@ void threadpro(void* _id)
 							else
 							{
 								#ifdef SEND_TO_CLIENT
-								
-								if (g_getPacketStartFlag && (full_send(load_table[0].clientfd,&p->datalen,sizeof(p->datalen),0) < 0))
+								headlen = 0x7E7E0000|p->datalen;
+								if (g_getPacketStartFlag && (full_send(load_table[0].clientfd,&headlen,4,0) < 0))
 									{
 									
 										msg("EIS  send error\n");g_getPacketStartFlag=0;
 										close(load_table[0].clientfd);
 											load_table[0].clientfd=-1;
 										//goto fail;
-									}
+									} else {
+										
+														} 
 
 								if (g_getPacketStartFlag && (full_send(load_table[0].clientfd,p->buf,p->datalen,0) < 0))
 									{
@@ -769,6 +807,7 @@ void threadpro(void* _id)
         close(ep_fd);
         ep_fd = -1;
     }       
+    msg ("ESI exitflag=1\n");
     exitflag = 1 ;
     msg("thread end\n"); 
 	pthread_exit(NULL);	
@@ -849,10 +888,14 @@ void my_callback(u_char *useless,const struct pcap_pkthdr* pkthdr,const u_char*
 
 
 	if(p==NULL)
-		{msg("EISget bc node error\n");return;}
-	memcpy(p->buf,packet,pkthdr->caplen<MAX_BUFFER_FOR_PACKET?pkthdr->caplen:MAX_BUFFER_FOR_PACKET);
+		{
+
+			sleep(1);
+		msg("EISget bc node error\n");
+			return;}
+	memcpy(p->buf,packet,pkthdr->caplen<MAX_BUFFER_FOR_PACKET?pkthdr->caplen:MAX_BUFFER_FOR_PACKET-1);
 		
-	p->datalen=pkthdr->caplen<MAX_BUFFER_FOR_PACKET?pkthdr->caplen:MAX_BUFFER_FOR_PACKET;	
+	p->datalen = pkthdr->caplen < MAX_BUFFER_FOR_PACKET ? pkthdr->caplen : MAX_BUFFER_FOR_PACKET-1;	
 	p->ip = p->buf+ipoff;
 	
 	pthread_mutex_lock(&classifiers[classid].work_mutex);
@@ -955,8 +998,9 @@ void threadsocks(void* _id)
 	}
 	NS_TIME_START(time);
 	pcap_loop(descr,-1,my_callback,NULL);
-	sleep(4);
-	exitflag=1;
+	
+	msg ("ESI pcap_loop exit\n");
+	
 	NS_TIME_END(time);
 
 }
@@ -1023,9 +1067,9 @@ int main(int argc, char **argv)
 	//char *filename = "/run/shm/a.pcap";
 	//char *filename = "/home/zhao1/get.pcap";
 	//char *filename = "/run/shm/get.pcap";
-	//char *filename = "./get.pcap";
-	descr = pcap_open_live(dev,MAX_BUFFER_FOR_PACKET,1 ,0,errbuf);
-	//descr =pcap_open_offline(filename, errbuf);
+	char *filename = "./get.pcap";
+	//descr = pcap_open_live(dev,MAX_BUFFER_FOR_PACKET,1 ,0,errbuf);
+	descr =pcap_open_offline(filename, errbuf);
 
 	if(descr == NULL)
 	{ printf("pcap_open_live(): %s\n",errbuf); exit(1); }
@@ -1047,6 +1091,7 @@ int main(int argc, char **argv)
 	signal(SIGQUIT, sigproc);
 	signal(SIGSTOP, sigproc);
 	signal(SIGURG, sigproc);
+	signal(SIGPIPE, sigproc);
 
 	//////////////
 	//compile ac dfa
@@ -1255,6 +1300,7 @@ int main(int argc, char **argv)
 	//sleep(5);
 	close(sockfd);
 	msg("IS\ng_sendpacket=%ld\npacket_num=%ld\n",g_sendpacket,packet_num);
+	msg ("ESI exitflag=1\n");
 	exitflag = 1;
 	speed1(NS_GET_TIMEP(time),packet_num,packet_len);
 	msg("loop exit\n");

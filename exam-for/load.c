@@ -518,14 +518,14 @@ inline BC* get_BC_node(BC** BC_head)
 		{
 			//msg("WInode null\n");
 			//exit(0);
-			p=(BC*)calloc(1,sizeof(BC));
+			/*p=(BC*)calloc(1,sizeof(BC));
 			if(p==NULL)
 			{
 				msg("EIcalloc p error\n");
 				
 				return NULL;
 			}
-			p->next=NULL;
+			p->next=NULL;*/
 		
 			return p;				
 			//return NULL;
