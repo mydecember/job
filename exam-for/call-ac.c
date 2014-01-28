@@ -676,8 +676,7 @@ void threadpro(void* _id)
 											load_table[0].clientfd=-1;
 										//goto fail;
 									} else {
-										if (g_getPacketStartFlag)
-															printf("send :%d\n",p->datalen);
+										
 														} 					
 
 						     	if (g_getPacketStartFlag &&  (full_send(load_table[0].clientfd,p->buf,p->datalen,0) < 0))
@@ -1086,9 +1085,9 @@ int main(int argc, char **argv)
 	//char *filename = "/run/shm/a.pcap";
 	//char *filename = "/home/zhao1/get.pcap";
 	//char *filename = "/run/shm/get.pcap";
-	char *filename = "./get.pcap";
-	//descr = pcap_open_live(dev,MAX_BUFFER_FOR_PACKET,1 ,0,errbuf);
-	descr =pcap_open_offline(filename, errbuf);
+	//char *filename = "./get.pcap";
+	descr = pcap_open_live(dev,MAX_BUFFER_FOR_PACKET,1 ,0,errbuf);
+	//descr =pcap_open_offline(filename, errbuf);
 
 	if(descr == NULL)
 	{ printf("pcap_open_live(): %s\n",errbuf); exit(1); }

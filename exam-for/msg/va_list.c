@@ -98,7 +98,7 @@ if(logleve>=err)
 	cnt = vfprintf(stderr,buf, argptr);
 	#else
 	cnt = vfprintf(fp,buf, argptr);
-fclose(fp);
+	fclose(fp);
 	#endif
 }
 va_end(argptr);
