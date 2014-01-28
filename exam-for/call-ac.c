@@ -171,14 +171,21 @@ int full_send(int sockfd, char * buf, int buflen, int flag)
 			return 0;
 		}
 	if (havesend < buflen) {
-		if (havesend == -1 && errno != EAGAIN){
-			msg("ESIhavesend=%d\n",havesend);
-			return -1;
-		}
+		
 		if (havesend == 0) {
 			msg("ESI havesend=0\n");
 			return -1;
 		}
+		if (havesend == -1) {
+			if (errno != EAGAIN){
+				msg("ESIhavesend=%d\n",havesend);
+				return -1;
+			}
+			
+			msg("WSI havesend=%d,buflen=%d\n",havesend,buflen);
+			havesend = 0;
+		}
+		
 
 		fd_set writefds;//
 		struct timeval tv;
@@ -208,14 +215,14 @@ int full_send(int sockfd, char * buf, int buflen, int flag)
 			else if (ret==0) 
 			{
 				msg("WIStime out... buflen=%d\n",buflen);
-				sleep(1);
+				//sleep(1);
 				continue;
 			}
 			else
 			{			
 				if (FD_ISSET(sockfd, &writefds))
 				{			
-					sendlen = send(sockfd, buf, buflen - havesend, flag);				
+					sendlen = send(sockfd, &buf[havesend], buflen - havesend, flag);				
 					if (sendlen == -1 ){
 						if (errno != EAGAIN && errno != EINTR)
 						{
@@ -408,7 +415,9 @@ void threadpro(void* _id)
 							{
 								//msg("EIStcp\n");
 								//tcp=(struct fniff_tcp*)(packet+size_mac+size_ip);
-								tcp=(struct fniff_tcp*)((char*)ip+size_ip);
+								//tcp=(struct fniff_tcp*)((char*)ip+size_ip);
+								tcp=(struct fniff_tcp*)((char*)ip+ip->ip_hl*4);
+								
 								sd.b_ip=(ip->ip_src.s_addr);
 								sd.l_ip=(ip->ip_dst.s_addr);
 								if(sd.b_ip>sd.l_ip)
@@ -538,6 +547,8 @@ void threadpro(void* _id)
 													while(p!=NULL)
 													{
 														headlen = 0x7E7E0000|p->datalen;
+														if (p->datalen > 3000)
+															printf("p->datalen=%d\b",p->datalen);
 														if (g_getPacketStartFlag && (full_send(load_table[temp->id].clientfd,&headlen,4,0) < 0))
 														{
 																
@@ -598,6 +609,8 @@ void threadpro(void* _id)
 						      		{	
 										#ifdef SEND_TO_CLIENT
 										headlen = 0x7E7E0000|p->datalen;
+										if (p->datalen > 3000)
+															printf("p->datalen=%d\b",p->datalen);
 										if (g_getPacketStartFlag && (full_send(load_table[temp->id].clientfd,&headlen,4,0) < 0))
 											{
 											
@@ -653,6 +666,8 @@ void threadpro(void* _id)
 						     	//static char pro_map[PRO_MAX+2][20]={"HTTP","FTP","POP3","SMTP","UNKOWN","UDP","ICMP"};
 						     	#ifdef SEND_TO_CLIENT
 						     	headlen = 0x7E7E0000|p->datalen;
+						     	if (p->datalen > 3000)
+															printf("p->datalen=%d\b",p->datalen);
 						     	if (g_getPacketStartFlag && (full_send(load_table[0].clientfd,&headlen,4,0) < 0))
 									{
 										
@@ -707,6 +722,8 @@ void threadpro(void* _id)
 								hash=hash_HB(sd.b_ip,sd.l_ip);
 								#ifdef SEND_TO_CLIENT
 								headlen = 0x7E7E0000|p->datalen;
+								if (p->datalen > 3000)
+															printf("p->datalen=%d\b",p->datalen);
 								if (g_getPacketStartFlag &&  (full_send(load_table[0].clientfd,&headlen,4,0) < 0))
 									{
 										
@@ -739,6 +756,8 @@ void threadpro(void* _id)
 							{
 								#ifdef SEND_TO_CLIENT
 								headlen = 0x7E7E0000|p->datalen;
+								if (p->datalen > 3000)
+															printf("p->datalen=%d\b",p->datalen);
 								if (g_getPacketStartFlag && (full_send(load_table[0].clientfd,&headlen,4,0) < 0))
 									{
 									
@@ -890,8 +909,8 @@ void my_callback(u_char *useless,const struct pcap_pkthdr* pkthdr,const u_char*
 	if(p==NULL)
 		{
 
-			sleep(1);
-		msg("EISget bc node error\n");
+			usleep(500);
+		//msg("EISget bc node error\n");
 			return;}
 	memcpy(p->buf,packet,pkthdr->caplen<MAX_BUFFER_FOR_PACKET?pkthdr->caplen:MAX_BUFFER_FOR_PACKET-1);
 		
@@ -1240,7 +1259,7 @@ int main(int argc, char **argv)
 				FD_SET(load_table[clientindex].clientfd, &readfds);
 		}
 		
-		tv.tv_sec = 3;
+		tv.tv_sec = 5;
 		tv.tv_usec = 0;
 		msg("wait for connect\n");
 		ret=select(sockfd+1,&readfds,NULL,NULL,&tv);
